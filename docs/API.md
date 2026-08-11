@@ -81,8 +81,9 @@ amount is 1–10. Wait and held-key duration are bounded.
 
 ## Computer MCP
 
-Coddy connects internally to `http://computer-mcp:8090/mcp` using Streamable HTTP
-and bearer authentication. The server exposes:
+Coddy connects to `http://127.0.0.1:8090/mcp` inside the desktop container using
+stateless Streamable HTTP. The loopback endpoint does not require a separate MCP
+credential. The server exposes:
 
 - `computer` with actions `screenshot`, `mouse_move`, `left_click`,
   `right_click`, `middle_click`, `double_click`, `triple_click`,

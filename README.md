@@ -1,7 +1,7 @@
 # Relay AI Desktop + Coddy Agent
 
-One Linux desktop, shared by a human and an AI operator—now with a ready-to-run
-Coddy sidecar and an OpenAI-compatible model gateway.
+One Linux desktop, shared by a human and an AI operator, packaged as one
+ready-to-run Docker container with Coddy and an OpenAI-compatible model gateway.
 
 ![Relay AI Desktop in observer mode, with a real Linux cursor and Take control button](docs/assets/relay-desktop.png)
 
@@ -66,14 +66,13 @@ Any gateway that implements the OpenAI chat-completions contract can be used. A
 multimodal model is strongly recommended because inaccessible canvas and Electron
 surfaces require screenshots.
 
-The included VNC, control, MCP, and Coddy credentials are predictable development
-fixtures. The port is deliberately bound to loopback. Before any non-disposable
-or remotely reachable run, replace all four values in `.env`:
+The included VNC, control, and Coddy credentials are predictable local fixtures.
+The port is bound to loopback. Override them in `.env` when you want your own
+values:
 
 ```bash
 VNC_PASSWORD='replace-with-at-least-8-characters' \
 CONTROL_TOKEN='replace-with-at-least-32-random-characters' \
-MCP_AUTH_TOKEN='replace-with-at-least-32-random-characters' \
 CODDY_HTTP_TOKEN='replace-with-at-least-32-random-characters' \
 docker compose up -d --build
 ```
@@ -104,9 +103,9 @@ Coddy reaches the desktop through an internal Streamable HTTP MCP server. Its
 mouse down/up, cursor position, typing, key chords, hold-key, four-direction
 scroll, wait, and release-control. `ui_inspect` returns a bounded AT-SPI tree.
 
-This split is deliberate: Coddy handles model/session/tool orchestration while the
-small Go sidecar owns the stable computer-use contract. Replacing Coddy later does
-not require replacing the desktop API.
+Coddy handles model, session, and tool orchestration while the small Go MCP
+process owns the stable computer-use contract. Both run in the desktop container,
+so there is one lifecycle to operate while the code boundary remains replaceable.
 
 The image installs the agent skill at
 `/home/desktop/.agents/skills/os-operator`. Its helper wraps lease management,
@@ -160,25 +159,24 @@ docker compose up -d --build
 ## Architecture at a glance
 
 ```text
-browser ── noVNC/WebSocket ───────┐
-browser ── allowlisted gateway ───┼── desktop container
-                                  │      └── Xvfb :0 + XFCE + apps
-Coddy agent ── MCP ── Go sidecar ─┘
-        │                  └── bounded Relay control API
-        └── persistent sessions
+browser ── noVNC/WebSocket ──┐
+browser ── task/SSE ────────┼── one desktop container
+                             ├── Xvfb :0 + XFCE + apps
+                             ├── noVNC + bounded control API
+                             ├── Go computer MCP
+                             └── Coddy + persistent sessions
 ```
 
-Nginx exposes one loopback origin. x11vnc and the AI input adapter talk to the
-same X11 display, while a server-side lease arbitrates control. Desktop apps run
-as UID 1000, the control API as UID 1001, and only the narrow install broker runs
-privileged package operations. Read [the architecture](docs/ARCHITECTURE.md) for
-the tradeoffs against KasmVNC and WebRTC/Selkies.
+Nginx exposes one loopback origin. x11vnc, the Go MCP process, Coddy, and the AI
+input adapter all run under Supervisor and talk to the same X11 session. A
+server-side lease arbitrates control. Read [the architecture](docs/ARCHITECTURE.md)
+for the tradeoffs against KasmVNC and WebRTC/Selkies.
 
 ## Validate a change
 
 ```bash
 make test       # unit and API behavior
-make static     # unit, syntax, Compose, skill, and security invariants
+make static     # syntax, Compose, skill, and container invariants
 make smoke      # live framebuffer, AT-SPI, input, and handoff checks
 ```
 
@@ -189,19 +187,15 @@ The manual two-controller walkthrough is in [docs/TESTING.md](docs/TESTING.md).
 - [Architecture and design decisions](docs/ARCHITECTURE.md)
 - [Operator and handoff API](docs/API.md)
 - [Running Coddy with OpenAI-compatible providers](docs/CODDY.md)
-- [Security boundary and hardening](docs/SECURITY.md)
 - [Testing and manual control handoff](docs/TESTING.md)
 - [Implementation specification](docs/SPEC.md)
 - [Contributing](CONTRIBUTING.md)
 
-## Security status
+## Project scope
 
-Relay is a local, single-user demo environment—not a hostile multi-tenant sandbox.
-The reference Compose setup uses `seccomp=unconfined` so Chromium and Electron can
-retain their own namespace sandbox inside Docker. That still broadens the host
-kernel attack surface. Do not expose this container directly to a network; add
-authentication, TLS, egress controls, resource limits, and a stronger runtime
-boundary first. See [SECURITY.md](docs/SECURITY.md) before deployment.
+Relay is a community desktop for local experiments and demos. Compose publishes
+only to `127.0.0.1`; read the source and adapt the defaults before using it in a
+different environment.
 
 No open-source license has been selected yet. Until one is added, normal copyright
 rules apply; contributions are welcome for review but do not imply a license grant.

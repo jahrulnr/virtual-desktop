@@ -12,21 +12,21 @@ make smoke
 ```
 
 The default local VNC password is `testtest`; the matching operator fixture is
-`test-control-token`. They are intentionally predictable and valid only while the
-published port remains bound to loopback.
+`test-control-token`. They are intentionally predictable fixtures for the
+loopback community setup.
 
 Unit tests cover lease expiration/preemption, validated input translation, API
 authentication/error contracts, bounded accessibility serialization, exact package
 approvals, expiry/single-use behavior, path confinement, and `.deb` replacement.
 Static checks compile Python, parse Compose, syntax-check shell, require loopback
-binding and security headers, reject dangerous host integration, and forbid
+binding and expected response headers, reject dangerous host integration, and forbid
 `--no-sandbox`. The live smoke test checks health, actual X pointer movement, human
-preemption and 409 rejection, a 1440x900 screenshot, AT-SPI output, and response
-security headers.
+preemption and 409 rejection, a 1440x900 screenshot, AT-SPI output, and expected
+response headers.
 
 Go tests additionally cover Relay response validation, smooth-move generation,
-the full computer action inventory, MCP image blocks, bearer auth, and control
-conflict propagation.
+the full computer action inventory, MCP image blocks, stateless reconnects, and
+control conflict propagation.
 
 To inspect the final desktop image:
 
@@ -87,10 +87,10 @@ curl -fsS http://127.0.0.1:3000/api/v1/health
 curl -fsS http://127.0.0.1:3000/api/v1/control
 ```
 
-Confirm all three services become healthy, neither endpoint returns 502, the file
-remains, and the Coddy session still appears in the operator panel. This reproduces
-the failure mode that occurs when a proxy comes up before its upstream and verifies
-that service health ordering plus Docker DNS recover correctly.
+Confirm the single `desktop` service becomes healthy, neither endpoint returns
+502, the file remains, and the Coddy session still appears in the operator panel.
+Open the old conversation and call a computer tool once more. It must complete
+without `session not found`; the MCP transport is stateless across recreation.
 
 For install replay, create a harmless approved install (for example `jq`) through
 the UI and operator API, verify it is present, then recreate the desktop:

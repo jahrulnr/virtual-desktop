@@ -1,6 +1,6 @@
 # ADR 0001: Pin Coddy and isolate computer use behind a Go MCP sidecar
 
-- Status: accepted
+- Status: superseded by [ADR 0002](0002-single-container-community-runtime.md)
 - Date: 2026-08-11
 
 ## Context
