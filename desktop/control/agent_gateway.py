@@ -201,7 +201,7 @@ def main() -> None:
     args = parser.parse_args()
     AgentGatewayServer(
         (args.host, args.port),
-        coddy_base_url=os.environ.get("CODDY_BASE_URL", "http://coddy:12345"),
+        coddy_base_url=os.environ.get("CODDY_BASE_URL", "http://127.0.0.1:12345"),
         coddy_token=os.environ["CODDY_HTTP_TOKEN"],
         human_token=Path(args.human_token_file).read_text(encoding="utf-8").strip(),
     ).serve_forever()

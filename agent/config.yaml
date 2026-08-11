@@ -29,10 +29,7 @@ skills:
 mcp_servers:
   - type: http
     name: relay
-    url: "http://computer-mcp:8090/mcp"
-    headers:
-      - name: Authorization
-        value: "Bearer ${MCP_AUTH_TOKEN}"
+    url: "http://127.0.0.1:8090/mcp"
 
 mcp:
   project_trust: deny

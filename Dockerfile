@@ -1,5 +1,26 @@
 # syntax=docker/dockerfile:1
 
+FROM golang:1.25-bookworm AS computer-mcp-build
+
+WORKDIR /src/computer-mcp
+COPY computer-mcp/go.mod computer-mcp/go.sum ./
+RUN go mod download
+COPY computer-mcp/ ./
+RUN CGO_ENABLED=0 go test ./... \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/relay-computer-mcp ./cmd/server
+
+FROM golang:1.25-bookworm AS coddy-build
+
+ARG CODDY_REF=2ba0ec9cc531e31954c2565b2984d92d4bc890d3
+RUN git clone --filter=blob:none https://github.com/coddy-project/coddy-agent.git /src/coddy \
+    && git -C /src/coddy checkout --detach "$CODDY_REF"
+COPY agent/patches/0001-preserve-mcp-image-results.patch /tmp/coddy.patch
+RUN git -C /src/coddy apply --check /tmp/coddy.patch \
+    && git -C /src/coddy apply /tmp/coddy.patch
+WORKDIR /src/coddy
+RUN CGO_ENABLED=0 go test ./internal/mcp ./internal/agent ./internal/llm \
+    && CGO_ENABLED=0 go build -trimpath -tags=http -ldflags="-s -w" -o /out/coddy ./cmd/coddy
+
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -49,11 +70,18 @@ RUN apt-get update \
 RUN groupadd --gid 1000 desktop \
     && groupadd --gid 1001 relayapi \
     && groupadd --gid 1002 relayaccess \
+    && groupadd --gid 1003 coddy \
     && useradd --uid 1000 --gid desktop --groups relayaccess --create-home --shell /bin/bash desktop \
     && useradd --uid 1001 --gid relayapi --groups relayaccess --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin relayapi \
+    && useradd --uid 1002 --gid coddy --no-create-home --home-dir /var/lib/coddy --shell /usr/sbin/nologin coddy \
     && install -d -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop \
-    && install -d /opt/relay/control /opt/relay/broker /opt/relay/web
+    && install -d -o coddy -g coddy -m 0700 /var/lib/coddy \
+    && install -d -o coddy -g coddy -m 0750 /workspace /opt/relay-agent/skills/os-operator \
+    && install -d /opt/relay/control /opt/relay/broker /opt/relay/web /usr/share/licenses/coddy
 
+COPY --from=computer-mcp-build /out/relay-computer-mcp /usr/local/bin/relay-computer-mcp
+COPY --from=coddy-build /out/coddy /usr/local/bin/coddy
+COPY --from=coddy-build /src/coddy/LICENSE /usr/share/licenses/coddy/LICENSE
 COPY desktop/control/ /opt/relay/control/
 COPY desktop/broker/ /opt/relay/broker/
 COPY desktop/config/supervisord.conf /etc/supervisor/supervisord.conf
@@ -61,6 +89,8 @@ COPY desktop/config/nginx.conf /etc/nginx/nginx.conf
 COPY desktop/scripts/ /opt/relay/scripts/
 COPY desktop/home/ /opt/relay/home-template/
 COPY web/ /opt/relay/web/
+COPY --chown=coddy:coddy agent/config.yaml /etc/coddy/config.yaml
+COPY --chown=coddy:coddy agent/skills/os-operator/SKILL.md /opt/relay-agent/skills/os-operator/SKILL.md
 
 RUN chmod 0755 /opt/relay/scripts/*.sh /opt/relay/control/*.py /opt/relay/broker/*.py \
     /opt/relay/home-template/.agents/skills/os-operator/scripts/*.py \
@@ -69,8 +99,8 @@ RUN chmod 0755 /opt/relay/scripts/*.sh /opt/relay/control/*.py /opt/relay/broker
     && rm -f /etc/nginx/sites-enabled/default
 
 EXPOSE 8080
-VOLUME ["/home/desktop", "/var/lib/relay"]
+VOLUME ["/home/desktop", "/var/lib/relay", "/var/lib/coddy"]
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-  CMD curl --fail --silent http://127.0.0.1:8080/api/v1/health >/dev/null || exit 1
+  CMD /opt/relay/scripts/healthcheck.sh
 
 ENTRYPOINT ["/opt/relay/scripts/entrypoint.sh"]

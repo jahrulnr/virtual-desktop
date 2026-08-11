@@ -73,6 +73,8 @@ echo "$relay_processes" | rg -q '^desktop +/usr/lib/chromium/chromium'
 echo "$relay_processes" | rg -q '^desktop +/usr/bin/xfce4-session'
 echo "$relay_processes" | rg -q '^desktop +xfce4-panel'
 echo "$relay_processes" | rg -q '^relayapi +/usr/bin/python3 -m control.api'
+echo "$relay_processes" | rg -q '^relayapi +/usr/local/bin/relay-computer-mcp'
+echo "$relay_processes" | rg -q '^coddy +/usr/local/bin/coddy http '
 if echo "$relay_processes" | rg -q -- '--no-sandbox'; then
   echo "Chromium is running without its application sandbox" >&2
   exit 1
