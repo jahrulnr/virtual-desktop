@@ -288,10 +288,45 @@ body[data-owner="agent"] .operator-pulse { background: var(--warning); box-shado
 .agent-message::before { content: ""; position: absolute; top: 8px; left: -3px; width: 5px; height: 5px; border-radius: 50%; background: #727a73; }
 .agent-message[data-role="user"]::before { background: var(--paper); }
 .agent-message[data-role="assistant"]::before { background: var(--signal); box-shadow: 0 0 0 4px rgb(185 221 201 / .08); }
+.agent-message[data-role="reasoning"]::before { border: 1px solid #7d877f; background: var(--shell); }
+.agent-message[data-role="error"]::before { background: var(--danger); box-shadow: 0 0 0 4px rgb(228 131 118 / .08); }
+.agent-message[data-role="decision"]::before { background: var(--paper); }
 .agent-message[data-role="tool"]::before { border-radius: 1px; background: var(--warning); }
+.agent-message[data-role="tool"][data-status="completed"]::before { background: var(--signal); }
+.agent-message[data-role="tool"][data-status="failed"]::before { background: var(--danger); }
 .agent-message-label { margin: 0 0 5px; color: #777e77; font: 600 9px/1.2 "DejaVu Sans Mono", monospace; letter-spacing: .09em; text-transform: uppercase; }
 .agent-message-body { margin: 0; color: #dcddd8; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent-message[data-role="tool"] .agent-message-body { color: #aaaFA8; font: 10px/1.5 "DejaVu Sans Mono", monospace; }
+.agent-message[data-role="reasoning"] .agent-message-body { color: #aeb3ad; }
+.agent-message[data-role="error"] .agent-message-body { color: #f0b3aa; }
+
+.agent-markdown { white-space: normal; }
+.agent-markdown > :first-child { margin-top: 0; }
+.agent-markdown > :last-child { margin-bottom: 0; }
+.agent-markdown p { margin: 0 0 9px; }
+.agent-markdown h2,
+.agent-markdown h3,
+.agent-markdown h4,
+.agent-markdown h5,
+.agent-markdown h6 { margin: 13px 0 6px; color: var(--paper); font: 650 13px/1.35 Inter, "Segoe UI", sans-serif; letter-spacing: -.01em; }
+.agent-markdown ul,
+.agent-markdown ol { margin: 7px 0 10px; padding-left: 20px; }
+.agent-markdown li { margin: 3px 0; padding-left: 2px; }
+.agent-markdown code { padding: 2px 4px; border: 1px solid #343a35; border-radius: 4px; background: #090b09; color: #cce6d7; }
+.agent-markdown pre { max-width: 100%; margin: 8px 0 11px; padding: 10px; overflow: auto; border: 1px solid #343a35; border-radius: 8px; background: #080a08; }
+.agent-markdown pre code { padding: 0; border: 0; background: transparent; color: #c8cec8; font: 10px/1.55 "DejaVu Sans Mono", monospace; white-space: pre; }
+.agent-markdown blockquote { margin: 8px 0; padding-left: 10px; border-left: 2px solid #58645b; color: #b5bbb4; }
+.agent-markdown a { color: var(--signal); text-underline-offset: 3px; }
+
+.agent-tool-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.agent-tool-heading strong { color: #d9ddd7; font-size: 11px; font-weight: 650; }
+.agent-tool-status { flex: none; color: #989f98; font: 8px/1.2 "DejaVu Sans Mono", monospace; letter-spacing: .06em; text-transform: uppercase; }
+.agent-tool[data-status="completed"] .agent-tool-status { color: var(--signal); }
+.agent-tool[data-status="failed"] .agent-tool-status { color: var(--danger); }
+.agent-tool details { margin-top: 7px; color: #858c85; font: 9px/1.45 "DejaVu Sans Mono", monospace; }
+.agent-tool summary { width: fit-content; color: #8f968f; }
+.agent-tool details[open] summary { margin-bottom: 6px; }
+.agent-tool pre { max-height: 150px; margin: 0; padding: 8px; overflow: auto; border: 1px solid #303630; border-radius: 7px; background: #090b09; color: #aeb4ae; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-tool[data-status="failed"] pre { border-color: rgb(228 131 118 / .28); color: #d8aaa3; }
 
 .permission-card {
   margin-bottom: 10px;

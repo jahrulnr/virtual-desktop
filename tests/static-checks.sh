@@ -40,6 +40,7 @@ fi
 rg -q '127.0.0.1:3000:8080' compose.yaml
 rg -q 'Content-Security-Policy' desktop/config/nginx.conf
 rg -q 'X-Content-Type-Options' desktop/config/nginx.conf
+rg -Uq 'location ~ \\.mjs\$ \{[^}]*default_type application/javascript;' desktop/config/nginx.conf
 rg -q '^user=relayapi$' desktop/config/supervisord.conf
 rg -q '^COPY desktop/home/ /opt/relay/home-template/$' Dockerfile
 rg -q '/opt/relay/home-template' desktop/scripts/entrypoint.sh
@@ -69,6 +70,8 @@ rg -q -- '--no-sandbox' desktop/scripts/start-desktop.sh && {
 
 if command -v node >/dev/null 2>&1; then
   node --check web/app.js
+  node --check web/agent-view.mjs
+  node --test tests/web-agent-view.test.mjs
 fi
 
 echo "Static checks passed"

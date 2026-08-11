@@ -1,4 +1,9 @@
 import RFB from "/novnc/core/rfb.js";
+import {
+  applyAgentEvent,
+  normalizeHistory,
+  parseMarkdown,
+} from "/agent-view.mjs";
 
 const screen = document.querySelector("#desktop-screen");
 const placeholder = document.querySelector("#feed-placeholder");
@@ -54,6 +59,7 @@ let humanToken = "";
 let agentAbort;
 let pendingPermission;
 let agentHistoryLoaded = false;
+let transcriptItems = [];
 const permissionQueue = [];
 
 function websocketUrl() {
@@ -282,24 +288,138 @@ function conciseError(error) {
   return firstLine.length > 180 ? `${firstLine.slice(0, 177)}…` : firstLine;
 }
 
-function appendAgentMessage(role, text, label) {
+function appendInline(parent, nodes) {
+  for (const node of nodes) {
+    if (node.type === "text") parent.append(document.createTextNode(node.text));
+    else if (node.type === "break") parent.append(document.createElement("br"));
+    else if (node.type === "code") {
+      const code = document.createElement("code");
+      code.textContent = node.text;
+      parent.append(code);
+    } else if (["strong", "emphasis", "link"].includes(node.type)) {
+      const element = document.createElement(node.type === "emphasis" ? "em" : node.type === "link" ? "a" : "strong");
+      if (node.type === "link") {
+        element.href = node.href;
+        element.target = "_blank";
+        element.rel = "noopener noreferrer";
+      }
+      appendInline(element, node.children);
+      parent.append(element);
+    }
+  }
+}
+
+function renderMarkdown(parent, markdown) {
+  for (const block of parseMarkdown(markdown)) {
+    if (block.type === "code_block") {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      if (block.language) code.dataset.language = block.language;
+      code.textContent = block.text;
+      pre.append(code);
+      parent.append(pre);
+      continue;
+    }
+    if (block.type === "list") {
+      const list = document.createElement(block.ordered ? "ol" : "ul");
+      for (const children of block.items) {
+        const item = document.createElement("li");
+        appendInline(item, children);
+        list.append(item);
+      }
+      parent.append(list);
+      continue;
+    }
+    const element = block.type === "heading"
+      ? document.createElement(`h${Math.min(6, block.level + 1)}`)
+      : document.createElement(block.type === "quote" ? "blockquote" : "p");
+    appendInline(element, block.children);
+    parent.append(element);
+  }
+}
+
+function messageLabel(role) {
+  return ({
+    user: "Your outcome",
+    assistant: "Coddy",
+    reasoning: "Thinking",
+    error: "Turn stopped",
+    decision: "Human decision",
+  })[role] || "Coddy";
+}
+
+function statusLabel(status) {
+  return ({
+    pending: "Queued",
+    in_progress: "Running",
+    completed: "Completed",
+    failed: "Failed",
+    cancelled: "Cancelled",
+  })[status] || status || "Queued";
+}
+
+function toolDetails(item) {
+  const sections = [];
+  if (item.rawInput) sections.push(`Input\n${typeof item.rawInput === "string" ? item.rawInput : JSON.stringify(item.rawInput, null, 2)}`);
+  if (item.detail) sections.push(`Result\n${item.detail}`);
+  return sections.join("\n\n").slice(0, 4_000);
+}
+
+function renderTranscript() {
   agentEmpty?.remove();
-  const item = document.createElement("article");
-  item.className = "agent-message";
-  item.dataset.role = role;
-  const itemLabel = document.createElement("p");
-  itemLabel.className = "agent-message-label";
-  itemLabel.textContent = label || role;
-  const body = document.createElement("p");
-  body.className = "agent-message-body";
-  body.textContent = text;
-  item.append(itemLabel, body);
-  agentTranscript.append(item);
-  while (agentTranscript.querySelectorAll(".agent-message").length > MAX_TRANSCRIPT_ITEMS) {
-    agentTranscript.querySelector(".agent-message")?.remove();
+  agentTranscript.replaceChildren();
+  for (const entry of transcriptItems) {
+    if (entry.type === "tool") {
+      const item = document.createElement("article");
+      item.className = "agent-message agent-tool";
+      item.dataset.role = "tool";
+      item.dataset.status = entry.status;
+      const label = document.createElement("p");
+      label.className = "agent-message-label";
+      label.textContent = "Agent action";
+      const heading = document.createElement("div");
+      heading.className = "agent-tool-heading";
+      const title = document.createElement("strong");
+      title.textContent = entry.title;
+      const status = document.createElement("span");
+      status.className = "agent-tool-status";
+      status.textContent = statusLabel(entry.status);
+      heading.append(title, status);
+      item.append(label, heading);
+      const detail = toolDetails(entry);
+      if (detail) {
+        const disclosure = document.createElement("details");
+        disclosure.open = entry.status === "failed";
+        const summary = document.createElement("summary");
+        summary.textContent = entry.status === "failed" ? "Failure details" : "Details";
+        const body = document.createElement("pre");
+        body.textContent = detail;
+        disclosure.append(summary, body);
+        item.append(disclosure);
+      }
+      agentTranscript.append(item);
+      continue;
+    }
+    const item = document.createElement("article");
+    item.className = "agent-message";
+    item.dataset.role = entry.role;
+    const label = document.createElement("p");
+    label.className = "agent-message-label";
+    label.textContent = messageLabel(entry.role);
+    const body = document.createElement("div");
+    body.className = "agent-message-body agent-markdown";
+    renderMarkdown(body, entry.content);
+    item.append(label, body);
+    agentTranscript.append(item);
   }
   agentTranscript.scrollTop = agentTranscript.scrollHeight;
-  return body;
+}
+
+function appendAgentMessage(role, text) {
+  if (!String(text || "").trim()) return;
+  transcriptItems.push({ type: "message", role, content: text, streaming: false });
+  transcriptItems = transcriptItems.slice(-MAX_TRANSCRIPT_ITEMS);
+  renderTranscript();
 }
 
 async function agentFetch(path, options = {}) {
@@ -341,11 +461,9 @@ async function loadAgentHistory() {
     }
     if (!response.ok) throw new Error(`Conversation restore failed (${response.status})`);
     const history = await response.json();
-    const messages = Array.isArray(history.messages) ? history.messages.slice(-50) : [];
-    for (const message of messages) {
-      if (!message || typeof message.content !== "string") continue;
-      const role = message.role === "user" ? "user" : "assistant";
-      appendAgentMessage(role, message.content.slice(0, 4000), role === "user" ? "Your outcome" : "Coddy");
+    transcriptItems = normalizeHistory(history.messages).slice(-MAX_TRANSCRIPT_ITEMS);
+    if (transcriptItems.length) {
+      renderTranscript();
     }
     agentHistoryLoaded = true;
   } catch (error) {
@@ -380,7 +498,7 @@ async function resolvePermission(optionId) {
       body: JSON.stringify({ toolCallId: pendingPermission.toolCallId, optionId }),
     });
     if (!response.ok) throw new Error(`Permission update failed (${response.status})`);
-    appendAgentMessage("tool", optionId === "allow" ? "Protected action allowed once." : "Protected action rejected.", "Human decision");
+    appendAgentMessage("decision", optionId === "allow" ? "Protected action allowed once." : "Protected action rejected.");
     permissionCard.hidden = true;
     pendingPermission = null;
     resolved = true;
@@ -396,8 +514,12 @@ async function resolvePermission(optionId) {
 permissionAllow.addEventListener("click", () => resolvePermission("allow"));
 permissionReject.addEventListener("click", () => resolvePermission("reject"));
 
-function handleAgentEvent(name, data, assistantBody) {
-  if (data === "[DONE]") return true;
+function handleAgentEvent(name, data) {
+  if (data === "[DONE]") {
+    transcriptItems = applyAgentEvent(transcriptItems, name, data);
+    renderTranscript();
+    return true;
+  }
   let payload;
   try { payload = JSON.parse(data); } catch { throw new Error("Agent sent malformed stream data"); }
   if (payload.error) {
@@ -411,25 +533,19 @@ function handleAgentEvent(name, data, assistantBody) {
   }
   if (name === "tool_call" || name === "tool_call_update") {
     const tool = payload.toolCall || payload.tool_call || payload;
-    const title = tool.title || tool.name || "Desktop tool";
-    const status = tool.status ? ` · ${tool.status}` : "";
-    appendAgentMessage("tool", `${title}${status}`, "Agent action");
-    setAgentStatus("Operating the desktop", "working");
-    return false;
+    setAgentStatus(tool.status === "failed" ? "An action failed · Coddy is reviewing" : "Operating the desktop", "working");
   }
   if (name === "error") throw new Error(payload.message || "Agent stream failed");
-  const delta = payload.choices?.[0]?.delta?.content;
-  if (typeof delta === "string") {
-    if (assistantBody.textContent.length + delta.length > MAX_ASSISTANT_CHARS) {
-      throw new Error("Agent text exceeded the 256 KiB display limit");
-    }
-    assistantBody.textContent += delta;
-    agentTranscript.scrollTop = agentTranscript.scrollHeight;
+  const next = applyAgentEvent(transcriptItems, name, payload);
+  if (next.some((item) => item.type === "message" && item.content.length > MAX_ASSISTANT_CHARS)) {
+    throw new Error("Agent text exceeded the 256 KiB display limit");
   }
+  transcriptItems = next.slice(-MAX_TRANSCRIPT_ITEMS);
+  renderTranscript();
   return false;
 }
 
-async function consumeAgentStream(response, assistantBody) {
+async function consumeAgentStream(response) {
   if (!response.body) throw new Error("Agent returned no stream");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -442,7 +558,7 @@ async function consumeAgentStream(response, assistantBody) {
     if (dataLines.length) {
       const data = dataLines.join("\n");
       if (data.length > MAX_EVENT_CHARS) throw new Error("Agent event exceeded 256 KiB");
-      receivedDone ||= handleAgentEvent(eventName, data, assistantBody);
+      receivedDone ||= handleAgentEvent(eventName, data);
     }
     eventName = "message";
     dataLines = [];
@@ -489,8 +605,8 @@ async function releaseHumanForAgent() {
 
 async function runAgent(prompt) {
   await releaseHumanForAgent();
-  appendAgentMessage("user", prompt, "Your outcome");
-  const assistantBody = appendAgentMessage("assistant", "", "Coddy");
+  appendAgentMessage("user", prompt);
+  const turnStartIndex = transcriptItems.length;
   agentAbort = new AbortController();
   agentSend.disabled = true;
   agentStop.hidden = false;
@@ -505,14 +621,17 @@ async function runAgent(prompt) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error?.message || `Agent request failed (${response.status})`);
     }
-    await consumeAgentStream(response, assistantBody);
-    if (!assistantBody.textContent) assistantBody.textContent = "Task turn completed without a text reply.";
-    setAgentStatus("Ready for the next outcome");
+    await consumeAgentStream(response);
+    const turnItems = transcriptItems.slice(turnStartIndex);
+    if (!turnItems.length) appendAgentMessage("assistant", "Task turn completed without a text reply.");
+    const failed = turnItems.some((item) => item.type === "tool" && item.status === "failed");
+    setAgentStatus(failed ? "Turn ended after a failed action" : "Ready for the next outcome", failed ? "error" : "ready");
   } catch (error) {
     if (error.name === "AbortError") setAgentStatus("Agent stopped");
     else {
-      assistantBody.textContent ||= conciseError(error);
-      setAgentStatus(conciseError(error), "error");
+      const message = conciseError(error);
+      appendAgentMessage("error", message);
+      setAgentStatus(message, "error");
     }
   } finally {
     agentAbort = null;
