@@ -36,6 +36,17 @@
             <span id="operator-label">Desktop ready</span>
           </div>
           <button
+            class="agent-button"
+            id="open-agent"
+            type="button"
+            aria-controls="agent-drawer"
+            aria-expanded="false"
+            aria-label="Open Coddy operator"
+          >
+            <span class="agent-glyph" aria-hidden="true">C</span>
+            <span>Coddy</span>
+          </button>
+          <button
             class="icon-button"
             id="open-tools"
             type="button"
@@ -57,6 +68,51 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 11V6.5a1.5 1.5 0 0 1 3 0V10M10.5 9V5.5a1.5 1.5 0 0 1 3 0V10m0-3a1.5 1.5 0 0 1 3 0v4m0-2a1.5 1.5 0 0 1 3 0v4c0 5-3.2 8-7.5 8-2.2 0-4-.7-5.5-2.5l-3.1-3.8a1.7 1.7 0 0 1 2.5-2.3L8 14"/></svg>
         <span>Release control</span>
       </button>
+
+      <aside class="agent-drawer" id="agent-drawer" aria-label="Coddy AI operator" hidden>
+        <header class="agent-heading">
+          <div class="agent-identity">
+            <span class="agent-glyph agent-glyph-large" aria-hidden="true">C</span>
+            <div>
+              <p class="eyebrow">Desktop operator</p>
+              <h1>Coddy Agent</h1>
+            </div>
+          </div>
+          <button class="drawer-close" id="close-agent" type="button" aria-label="Close Coddy operator">×</button>
+        </header>
+
+        <div class="agent-status" id="agent-status" role="status">
+          <span class="agent-status-line" aria-hidden="true"></span>
+          <span id="agent-status-label">Ready for an outcome</span>
+        </div>
+
+        <div class="agent-transcript" id="agent-transcript" aria-live="polite" aria-label="Agent activity">
+          <div class="agent-empty" id="agent-empty">
+            <span class="agent-empty-mark" aria-hidden="true">↳</span>
+            <p>Tell Coddy what should be true on the desktop. It will inspect, act, and verify in the same session you can take over.</p>
+          </div>
+        </div>
+
+        <div class="permission-card" id="permission-card" hidden>
+          <p class="eyebrow">Confirmation required</p>
+          <strong id="permission-title">Coddy wants to run a protected action</strong>
+          <pre id="permission-detail"></pre>
+          <div class="permission-actions">
+            <button id="permission-reject" type="button">Reject</button>
+            <button id="permission-allow" type="button">Allow once</button>
+          </div>
+        </div>
+
+        <form class="agent-composer" id="agent-form">
+          <label class="visually-hidden" for="agent-prompt">Task for Coddy</label>
+          <textarea id="agent-prompt" rows="3" maxlength="12000" placeholder="Open Chromium and fill the demo form…" required></textarea>
+          <div class="composer-footer">
+            <span>Enter to send · Shift+Enter for newline</span>
+            <button class="agent-stop" id="agent-stop" type="button" hidden>Stop</button>
+            <button class="agent-send" id="agent-send" type="submit">Run task</button>
+          </div>
+        </form>
+      </aside>
 
       <aside class="control-drawer" id="control-drawer" aria-label="Desktop controls" hidden>
         <div class="drawer-heading">

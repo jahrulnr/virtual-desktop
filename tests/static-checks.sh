@@ -12,6 +12,8 @@ config = json.load(sys.stdin)
 environment = config["services"]["desktop"]["environment"]
 assert len(environment["VNC_PASSWORD"]) >= 8, "default VNC_PASSWORD must be at least 8 characters"
 assert len(environment["CONTROL_TOKEN"]) >= 12, "default CONTROL_TOKEN must be at least 12 characters"
+assert len(config["services"]["computer-mcp"]["environment"]["MCP_AUTH_TOKEN"]) >= 16
+assert len(config["services"]["coddy"]["environment"]["CODDY_HTTP_TOKEN"]) >= 16
 '
 VNC_PASSWORD=test CONTROL_TOKEN=test-control-token \
   desktop/scripts/validate-config.sh >/dev/null 2>&1 && {
@@ -44,6 +46,10 @@ rg -q '/opt/relay/home-template' desktop/scripts/entrypoint.sh
 rg -q 'class="control-pill take-control"' web/index.html
 rg -q 'class="observer-shield"' web/index.html
 rg -q 'aria-controls="control-drawer"' web/index.html
+rg -q 'aria-controls="agent-drawer"' web/index.html
+rg -q 'X-Human-Control-Token' desktop/control/agent_gateway.py
+rg -q 'relay__computer' agent/skills/os-operator/SKILL.md
+rg -q '2ba0ec9cc531e31954c2565b2984d92d4bc890d3' compose.yaml agent/Dockerfile
 rg -q 'body\[data-owner="human-self"\].*release-control' web/styles.css
 rg -q 'body\[data-owner="human-self"\].*observer-shield.*display: none' web/styles.css
 rg -Uq '\.observer-shield \{[^}]*cursor: default;' web/styles.css
@@ -60,5 +66,9 @@ rg -q -- '--no-sandbox' desktop/scripts/start-desktop.sh && {
   echo "Chromium sandbox must not be disabled" >&2
   exit 1
 }
+
+if command -v node >/dev/null 2>&1; then
+  node --check web/app.js
+fi
 
 echo "Static checks passed"

@@ -16,12 +16,13 @@
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body { margin: 0; background: var(--shell); }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button, summary, select { cursor: pointer; }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible,
 .desktop-screen:focus-visible {
   outline: 2px solid var(--signal);
@@ -81,6 +82,7 @@ summary:focus-visible,
 
 .connection-chip,
 .operator-chip,
+.agent-button,
 .icon-button,
 .control-pill {
   border: 1px solid rgb(255 255 255 / 0.14);
@@ -105,6 +107,7 @@ summary:focus-visible,
 .header-actions { display: flex; align-items: center; gap: 8px; pointer-events: none; }
 .connection-chip { pointer-events: auto; }
 .icon-button { pointer-events: auto; }
+.agent-button { pointer-events: auto; }
 .operator-chip { transition: opacity 180ms ease, transform 180ms ease; }
 
 .status-dot,
@@ -131,6 +134,33 @@ summary:focus-visible,
   color: var(--paper);
   background: rgb(17 19 17 / 0.72);
 }
+
+.agent-button {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 8px;
+  border-radius: 999px;
+  color: var(--paper);
+  background: rgb(17 19 17 / 0.72);
+  font: 600 11px/1 "DejaVu Sans Mono", monospace;
+  letter-spacing: .03em;
+}
+
+.agent-glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #96b9a4;
+  border-radius: 50%;
+  background: #1f2a23;
+  color: #d7eee0;
+  font: 700 10px/1 "DejaVu Sans Mono", monospace;
+}
+
+.agent-glyph-large { width: 38px; height: 38px; font-size: 13px; }
 
 .icon-button svg,
 .drawer-tool svg,
@@ -207,6 +237,97 @@ body[data-owner="agent"] .operator-pulse { background: var(--warning); box-shado
   backdrop-filter: blur(24px) saturate(120%);
   animation: drawer-in 180ms ease-out;
 }
+.agent-drawer {
+  position: absolute;
+  z-index: 8;
+  inset: 68px auto 20px 20px;
+  width: min(410px, calc(100vw - 40px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgb(14 17 15 / 0.96);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.58);
+  backdrop-filter: blur(24px) saturate(120%);
+  animation: agent-in 180ms ease-out;
+}
+.agent-drawer[hidden] { display: none; }
+.agent-heading,
+.agent-identity { display: flex; align-items: flex-start; }
+.agent-heading { justify-content: space-between; gap: 20px; }
+.agent-identity { gap: 12px; }
+.agent-heading h1 { font-size: 21px; }
+
+.agent-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  margin-top: 18px;
+  padding: 0 11px;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+  font: 10px/1 "DejaVu Sans Mono", monospace;
+}
+.agent-status-line { width: 22px; height: 1px; background: var(--signal); box-shadow: 0 0 8px var(--signal); }
+.agent-status[data-state="working"] .agent-status-line { animation: scan 1.2s ease-in-out infinite; }
+.agent-status[data-state="error"] .agent-status-line { background: var(--danger); box-shadow: none; }
+
+.agent-transcript {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 3px 12px 0;
+  scrollbar-color: #3d443e transparent;
+}
+.agent-empty { display: grid; grid-template-columns: 24px 1fr; gap: 7px; padding: 18px 7px; color: #858b84; }
+.agent-empty-mark { color: var(--signal); font: 18px/1 "DejaVu Sans Mono", monospace; }
+.agent-empty p { margin: 0; font-size: 12px; line-height: 1.65; }
+.agent-message { position: relative; margin-left: 13px; padding: 4px 6px 15px 20px; border-left: 1px solid #303630; }
+.agent-message::before { content: ""; position: absolute; top: 8px; left: -3px; width: 5px; height: 5px; border-radius: 50%; background: #727a73; }
+.agent-message[data-role="user"]::before { background: var(--paper); }
+.agent-message[data-role="assistant"]::before { background: var(--signal); box-shadow: 0 0 0 4px rgb(185 221 201 / .08); }
+.agent-message[data-role="tool"]::before { border-radius: 1px; background: var(--warning); }
+.agent-message-label { margin: 0 0 5px; color: #777e77; font: 600 9px/1.2 "DejaVu Sans Mono", monospace; letter-spacing: .09em; text-transform: uppercase; }
+.agent-message-body { margin: 0; color: #dcddd8; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-message[data-role="tool"] .agent-message-body { color: #aaaFA8; font: 10px/1.5 "DejaVu Sans Mono", monospace; }
+
+.permission-card {
+  margin-bottom: 10px;
+  padding: 13px;
+  border: 1px solid rgb(230 182 109 / .38);
+  border-radius: 13px;
+  background: rgb(230 182 109 / .07);
+}
+.permission-card[hidden] { display: none; }
+.permission-card strong { display: block; margin: 6px 0; font-size: 12px; }
+.permission-card pre { max-height: 90px; margin: 0 0 10px; overflow: auto; color: #b9bcb6; font: 9px/1.5 "DejaVu Sans Mono", monospace; white-space: pre-wrap; }
+.permission-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.permission-actions button { min-height: 36px; border: 1px solid var(--line); border-radius: 9px; color: var(--paper); background: rgb(255 255 255 / .04); font-size: 11px; font-weight: 650; }
+.permission-actions #permission-allow { background: var(--paper); color: var(--ink); }
+
+.agent-composer { padding-top: 12px; border-top: 1px solid var(--line); }
+.agent-composer textarea {
+  width: 100%;
+  min-height: 76px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid #3d443e;
+  border-radius: 12px;
+  background: #090b09;
+  color: var(--paper);
+  line-height: 1.45;
+}
+.agent-composer textarea::placeholder { color: #5d635d; }
+.composer-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.composer-footer span { margin-right: auto; color: #666c66; font: 8px/1.3 "DejaVu Sans Mono", monospace; }
+.agent-send,
+.agent-stop { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; font-size: 10px; font-weight: 700; }
+.agent-send { background: var(--paper); color: var(--ink); }
+.agent-stop { background: transparent; color: var(--danger); }
+.agent-send:disabled { opacity: .45; cursor: wait; }
 .control-drawer[hidden] { display: none; }
 .drawer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .eyebrow { margin: 0; color: var(--muted); font: 600 10px/1.3 "DejaVu Sans Mono", monospace; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -284,6 +405,8 @@ code { font-family: "DejaVu Sans Mono", monospace; font-size: .9em; }
 
 @keyframes breathe { 50% { opacity: .45; transform: scale(.82); } }
 @keyframes drawer-in { from { opacity: 0; transform: translateX(12px); } }
+@keyframes agent-in { from { opacity: 0; transform: translateX(-12px); } }
+@keyframes scan { 50% { width: 42px; opacity: .5; } }
 
 @media (max-width: 620px) {
   .stage-vignette { border-width: 3px; border-radius: 10px; }
@@ -291,9 +414,12 @@ code { font-family: "DejaVu Sans Mono", monospace; font-size: .9em; }
   .connection-chip { max-width: 42px; overflow: hidden; padding: 0 16px; }
   .connection-chip span:last-child { display: none; }
   .operator-chip { display: none; }
+  .agent-button span:last-child { display: none; }
+  .agent-button { width: 38px; padding: 0; justify-content: center; }
   .release-control { inset: 12px 58px auto auto; }
   .take-control { min-height: 44px; padding: 0 16px; }
   .control-drawer { inset: 58px 12px 12px; width: auto; }
+  .agent-drawer { inset: 58px 12px 12px; width: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
