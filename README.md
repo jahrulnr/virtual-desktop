@@ -197,5 +197,4 @@ Relay is a community desktop for local experiments and demos. Compose publishes
 only to `127.0.0.1`; read the source and adapt the defaults before using it in a
 different environment.
 
-No open-source license has been selected yet. Until one is added, normal copyright
-rules apply; contributions are welcome for review but do not imply a license grant.
+This project is released under the [MIT License](LICENSE).
