@@ -1,0 +1,56 @@
+providers:
+  - name: gateway
+    type: openai
+    api_base: "${OPENAI_BASE_URL}"
+    api_key: "${OPENAI_API_KEY}"
+
+models:
+  - model: "gateway/${OPENAI_MODEL}"
+    max_tokens: 8192
+    max_context_tokens: 128000
+    temperature: 0.2
+    multimodal: true
+
+agent:
+  model: "gateway/${OPENAI_MODEL}"
+  max_turns: 40
+  max_tokens_per_turn: 128000
+  loop_guard: true
+  loop_tool_repeat_limit: 3
+
+sessions:
+  dir: "/var/lib/coddy/sessions"
+
+skills:
+  dirs: ["/opt/relay-agent/skills"]
+  sources: []
+  auto_discovery: true
+
+mcp_servers:
+  - type: http
+    name: relay
+    url: "http://computer-mcp:8090/mcp"
+    headers:
+      - name: Authorization
+        value: "Bearer ${MCP_AUTH_TOKEN}"
+
+mcp:
+  project_trust: deny
+
+tools:
+  permission_mode: ask
+  command_allowlist: []
+  background:
+    enabled: false
+  output_limits:
+    default: 500
+
+httpserver:
+  host: "0.0.0.0"
+  port: 12345
+  auth_token: "${CODDY_HTTP_TOKEN}"
+  public_docs: false
+  allow_insecure: false
+
+ui:
+  enabled: false
