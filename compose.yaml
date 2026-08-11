@@ -23,11 +23,77 @@ services:
       # exposing Relay beyond this local Compose setup.
       VNC_PASSWORD: "${VNC_PASSWORD:-testtest}"
       CONTROL_TOKEN: "${CONTROL_TOKEN:-test-control-token}"
+      CODDY_BASE_URL: "http://coddy:12345"
+      CODDY_HTTP_TOKEN: "${CODDY_HTTP_TOKEN:-test-coddy-http-token-change-me}"
     volumes:
       - desktop-home:/home/desktop
       - desktop-state:/var/lib/relay
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  computer-mcp:
+    build:
+      context: .
+      dockerfile: computer-mcp/Dockerfile
+    image: relay-computer-mcp:local
+    init: true
+    depends_on:
+      desktop:
+        condition: service_healthy
+    environment:
+      RELAY_BASE_URL: "http://desktop:8080"
+      RELAY_OPERATOR_TOKEN: "${CONTROL_TOKEN:-test-control-token}"
+      RELAY_AGENT_ID: "coddy-agent"
+      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-test-mcp-auth-token-change-me}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  coddy:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+      args:
+        CODDY_REF: "2ba0ec9cc531e31954c2565b2984d92d4bc890d3"
+    image: relay-coddy-agent:0.9.61-relay.1
+    init: true
+    depends_on:
+      computer-mcp:
+        condition: service_healthy
+    environment:
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"
+      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-test-mcp-auth-token-change-me}"
+      CODDY_HTTP_TOKEN: "${CODDY_HTTP_TOKEN:-test-coddy-http-token-change-me}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - coddy-state:/var/lib/coddy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "-H", "Authorization: Bearer ${CODDY_HTTP_TOKEN:-test-coddy-http-token-change-me}", "http://127.0.0.1:12345/v1/models"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
 volumes:
   desktop-home:
   desktop-state:
+  coddy-state:
