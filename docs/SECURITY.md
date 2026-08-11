@@ -9,6 +9,12 @@ the X server, VNC server, and stream proxy run as UID 1000. The control API runs
 dedicated UID 1001; its two capability files and root-broker socket are inaccessible
 to desktop applications. Only the narrow install broker and Nginx master run as root.
 
+Coddy and the Go MCP server run as non-root users with all capabilities dropped,
+`no-new-privileges`, and no host bind mounts. The MCP root filesystem is read-only.
+Only Coddy receives the model-provider credential; only the MCP server receives the
+desktop operator capability; only the desktop gateway receives the Coddy HTTP
+capability.
+
 The human and AI share the desktop user's files and graphical session by design.
 The control lease prevents accidental simultaneous input; it does not isolate one
 controller's data from the other.
@@ -49,12 +55,24 @@ untrusted content and cannot grant authority.
 | Browser attack surface | Chromium SUID sandbox remains enabled; no `--no-sandbox` | See seccomp exception below |
 | Data persistence | Separate named volumes; explicit `down -v` reset | Persistent profiles/files can retain malicious state or secrets |
 | Network abuse/exfiltration | Inbound loopback only | Outbound egress is unrestricted in this local build |
+| Model/provider credential | Provider key exists only in Coddy, not desktop/MCP | Coddy's approved built-in shell can read its own environment; production needs a credential broker/proxy |
+| Browser access to agent admin API | Human capability plus strict path/method allowlist | VNC password is still a weak local capability and must be replaced for remote use |
+| Agent stream exhaustion | 16 MiB gateway cap; tighter browser stream/event/text/DOM bounds; 30-second client socket timeout | A permitted 15-minute agent turn still occupies one gateway thread |
+| Supply-chain drift | Exact Coddy commit and patch application check; Go module sums | Docker build currently clones upstream over the network; vendor or mirror for hermetic releases |
 
 All graphical applications share one X server. Any compromised desktop application
 can observe or synthesize X11 input and read the desktop user's files; X11 is not an
 application isolation boundary. UID separation protects the operator/human API
 capabilities and install broker from that shared session, but it cannot make apps in
 the same desktop mutually private. Use a fresh session container for untrusted apps.
+
+Coddy also ships built-in file and command tools. They see only its empty
+`/workspace`, not the desktop home or host filesystem, and permission mode is
+`ask`. This is still not a perfect secret boundary: if a user approves an arbitrary
+Coddy shell command, that process can read Coddy's provider-key environment. For a
+production service, place the provider credential in a separate authenticated
+gateway so Coddy receives only a narrowly scoped ephemeral token, or patch the
+harness to disable unused built-in tools entirely.
 
 ## Important seccomp exception
 
@@ -83,6 +101,8 @@ are relevant defense-in-depth references.
 - Use an egress allowlist/proxy, DNS policy, and deny access to cloud metadata and
   RFC1918/host services.
 - Move secrets to a broker that never renders them into the desktop unless approved.
+- Give Coddy a short-lived provider token issued by a model proxy; do not leave a
+  valuable long-lived API key in its environment.
 - Pin images and packages, scan SBOMs, verify `.deb` provenance/signatures, and
   restrict allowed package names/sources.
 - Use read-only root filesystem plus explicit writable mounts where feasible;

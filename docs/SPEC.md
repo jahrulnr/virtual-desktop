@@ -16,6 +16,9 @@ Inferred functional requirements:
   client-only agent cursor.
 - Allow approved APT packages and local `.deb` files to be installed at runtime.
 - Persist home-directory data and an install manifest across container recreation.
+- Provide a browser-visible agent task panel, persistent agent sessions, and an
+  OpenAI-compatible provider configuration without exposing provider credentials
+  to the desktop container.
 - Reset all user state with one documented command.
 - Run without `--privileged`, host PID/network namespaces, Docker socket access, or
   added Linux capabilities.
@@ -63,6 +66,8 @@ Business and policy rules:
 - xdotool for XTEST mouse/keyboard injection; scrot for screenshots
 - AT-SPI (`python3-pyatspi`) for best-effort accessibility grounding
 - Docker Compose named volume for persisted home state
+- Coddy Agent pinned as the temporary Go harness, plus an official-SDK Go MCP
+  sidecar exposing `computer` and `ui_inspect`
 
 ## Commands
 
@@ -79,6 +84,8 @@ Business and policy rules:
 
 - `desktop/` — image, XFCE profile, in-container OS operator skill, control service,
   and install broker
+- `computer-mcp/` — typed computer-use MCP adapter and Relay API client
+- `agent/` — pinned Coddy build, minimal multimodal patch, configuration, and skill
 - `web/` — custom noVNC control-deck client
 - `tests/` — unit, static, container smoke, and manual handoff checks
 - `docs/` — architecture, API, security, and operating decisions
@@ -130,6 +137,8 @@ quote variable expansions.
 - Screenshot and accessibility endpoints return bounded structured responses.
 - Install requests fail without a matching human approval.
 - Home files survive `docker compose down && docker compose up`; `down -v` resets.
+- Coddy session history survives normal Compose recreation and the browser gateway
+  never exposes Coddy configuration/admin routes.
 - Automated tests pass and the manual handoff checklist is reproducible.
 
 ## Open questions for a production follow-up

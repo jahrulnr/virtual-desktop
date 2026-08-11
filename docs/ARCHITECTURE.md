@@ -10,7 +10,7 @@ files must survive an ordinary container recreation.
 
 The brief leaves identity, tenancy, Internet exposure, GPU/audio, and retention
 policy unspecified. This implementation therefore chooses a local, single-user
-demo boundary: one container/session, CPU graphics, no audio, unrestricted normal
+demo boundary: one display session across three containers, CPU graphics, no audio, unrestricted normal
 outbound browsing, and a port published only on `127.0.0.1`. Production identity,
 per-tenant scheduling, TLS, egress policy, secret injection, and retention are
 explicit follow-up work rather than silent assumptions.
@@ -18,27 +18,25 @@ explicit follow-up work rather than silent assumptions.
 ## Process layout
 
 ```text
-browser / host AI client
-        |
-        | HTTP + WebSocket on 127.0.0.1:3000
-        v
-      nginx :8080
-       |        |             |
-       |        |             +--> static control deck + noVNC modules
-       |        +--> control API :8000 (dedicated UID 1001)
-       |                  |        |        |
-       |                  |        |        +--> UID-1000 adapter --> AT-SPI tree
-       |                  |        +--> scrot framebuffer capture
-       |                  +--> xdotool/XTEST after agent lease validation
-       |                           |
-       +--> websockify :6080       v
-                  |           Xvfb :0 + XFCE + desktop applications
-                  v                ^
-             x11vnc :5900 ---------+
+browser -- HTTP/WebSocket --> desktop nginx :8080
+    |                           |-- static control deck + noVNC
+    |                           |-- allowlisted Coddy gateway :8001
+    |                           |-- control API :8000 (UID 1001)
+    |                           `-- websockify -> x11vnc
+    |                                              |
+    |                                      Xvfb :0 + XFCE + apps
+    |
+    `-- task/SSE --> Coddy :12345 (UID 10001, internal only)
+                         |
+                         `-- Streamable HTTP MCP
+                                  |
+                         computer-mcp :8090 (UID 10001)
+                                  |
+                         bounded Relay API + agent lease
 
-control API -- private Unix socket --> exact-plan install broker (root) --> apt/dpkg
 desktop apps (UID 1000) --> /home/desktop named volume
 install broker (root)   --> /var/lib/relay named volume
+Coddy sessions          --> /var/lib/coddy named volume
 ```
 
 Supervisor keeps the container's deliberately small process set together. Xvfb
@@ -46,6 +44,12 @@ provides a deterministic 1440x900 X11 screen; XFCE provides familiar
 window management; Chromium is the included browser and launches with its own SUID
 sandbox enabled. Nginx is the only published service and keeps the control API,
 WebSocket stream, web client, and noVNC modules on one origin.
+
+Coddy and the computer MCP are separate internal containers. Coddy owns the ReAct
+loop, provider adapter, skills, and session history. The Go MCP sidecar owns the
+portable computer-use tool contract and has no provider credential. The desktop
+owns display access and never receives the provider key. This separation makes a
+future NusaShell or other harness swap local to one container.
 
 ## Display and streaming choice
 
@@ -74,6 +78,12 @@ screen coordinates, key names, text lengths, click counts, scroll deltas, batch
 size, and the live lease before constructing `xdotool` argument arrays. It never
 passes operator values through a shell. xdotool uses the XTEST extension, so the
 window system and applications receive ordinary pointer and keyboard events.
+
+The MCP adapter intentionally presents the familiar computer-use inventory as one
+`computer` tool plus `ui_inspect`. It reads the live cursor and expands long moves
+into a capped smoothstep path, giving smaller models a simple goal-level primitive
+without making them predict animation frames. Click and scroll actions first move
+to their target; drag is atomic; waits and held keys are bounded to ten seconds.
 
 Grounding is hybrid:
 
@@ -121,6 +131,8 @@ Persistence is the useful default for repeatable demos:
   files, and user-local application state.
 - `desktop-state` stores a root-owned manifest of successfully installed APT or
   `.deb` plans. Entrypoint replay restores them into a newly created container.
+- `coddy-state` stores Coddy sessions and transcripts independently of desktop
+  files.
 - A `.deb` plan contains its resolved path and SHA-256 digest. Replay stops if the
   source file is gone or changed.
 - `docker compose down` preserves both volumes; `docker compose down -v` is the
@@ -144,6 +156,13 @@ Research informed the boundaries rather than being copied wholesale:
   grounding, and a confirmation broker.
 - [Cua](https://github.com/trycua/cua) informed the hybrid screenshot/accessibility/
   action abstraction; Relay keeps its own narrow, auditable protocol.
+- [Agent-Go](https://github.com/forkbikash/agent-go) was evaluated as the temporary
+  harness. It is a useful small coding-agent prototype, but its Anthropic-first CLI
+  and early lifecycle would require us to build the browser/session layer.
+- [Coddy Agent](https://github.com/coddy-project/coddy-agent) was selected instead:
+  its Go harness already supplies OpenAI-compatible providers, HTTP/SSE sessions,
+  skills, permission flow, and MCP. Relay pins one upstream commit and carries one
+  narrow patch to preserve MCP image results; it does not maintain a broad fork.
 
 The relevant upstream mechanisms are documented in the
 [noVNC RFB API](https://github.com/novnc/noVNC/blob/master/docs/API.md) and

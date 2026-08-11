@@ -36,10 +36,15 @@ A lease response is:
 ```
 
 Human claim always preempts. Agent conflicts and input after preemption return 409.
+If takeover occurs while a batch is already running, the controller cancels the
+current xdotool process, releases tracked keys/buttons, and re-checks the lease
+before every remaining action. The interrupted agent request also returns 409.
 
 ## Observe
 
 - `GET /api/v1/screenshot` — bearer token; returns `image/png`, 1440x900.
+- `GET /api/v1/cursor` — bearer token; returns the real X pointer as
+  `{"x":450,"y":260}`.
 - `GET /api/v1/accessibility` — bearer token; returns a bounded AT-SPI tree with
   roles, names, descriptions, states, screen bounds, and available action names.
 
@@ -59,14 +64,50 @@ actions and returns 204:
     {"type":"click", "button":"left", "count":1},
     {"type":"text", "text":"Hello"},
     {"type":"key", "keys":["CTRL","L"]},
-    {"type":"scroll", "delta":-3}
+    {"type":"scroll", "direction":"down", "delta":3},
+    {"type":"drag", "x":100, "y":100, "toX":500, "toY":320, "button":"left"},
+    {"type":"button", "button":"left", "state":"down"},
+    {"type":"button", "button":"left", "state":"up"},
+    {"type":"hold_key", "key":"SHIFT", "durationMs":500},
+    {"type":"wait", "durationMs":250}
   ]
 }
 ```
 
 Coordinates are absolute framebuffer pixels. Buttons are `left`, `middle`, or
 `right`; click count is 1–3; text is 1–4096 characters; a chord has 1–5 simple
-xdotool key names; scroll is -10..10 excluding zero.
+xdotool key names; scroll direction is `up`, `down`, `left`, or `right` and its
+amount is 1–10. Wait and held-key duration are bounded.
+
+## Computer MCP
+
+Coddy connects internally to `http://computer-mcp:8090/mcp` using Streamable HTTP
+and bearer authentication. The server exposes:
+
+- `computer` with actions `screenshot`, `mouse_move`, `left_click`,
+  `right_click`, `middle_click`, `double_click`, `triple_click`,
+  `left_click_drag`, `left_mouse_down`, `left_mouse_up`, `cursor_position`,
+  `type`, `key`, `hold_key`, `scroll`, `wait`, and `release_control`;
+- `ui_inspect`, returning the bounded AT-SPI JSON snapshot.
+
+Screenshot results contain a real MCP `image` content block. Pointer-targeted
+actions accept `[x,y]` in the 1440×900 framebuffer and automatically obtain an
+agent lease. A live human lease is never preempted and surfaces as a tool error.
+
+## Browser-to-Coddy gateway
+
+The browser uses `/agent-api/`, which is not a generic reverse proxy. It requires
+`X-Human-Control-Token`, injects the private Coddy bearer token server-side, limits
+POST bodies to 256 KiB, and allowlists only model discovery, streamed responses,
+session messages, permission decisions, and cancellation. Coddy configuration and
+workspace/admin routes are unreachable through this origin.
+
+`POST /v1/responses` and every session-specific route also require a valid
+`X-Coddy-Session-ID` matching `sess_[0-9a-f]{16,64}`; a path session ID must match
+the header exactly. Upstream responses are capped at 16 MiB and streamed using
+available HTTP chunks so small SSE events are flushed immediately. The web client
+applies tighter 8 MiB stream, 256 KiB event/text, 200 transcript-item, and 20 queued
+permission limits.
 
 ## Runtime installs
 

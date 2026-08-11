@@ -1,6 +1,7 @@
-# Relay AI Desktop
+# Relay AI Desktop + Coddy Agent
 
-One Linux desktop, shared by a human and an AI operator.
+One Linux desktop, shared by a human and an AI operator—now with a ready-to-run
+Coddy sidecar and an OpenAI-compatible model gateway.
 
 ![Relay AI Desktop in observer mode, with a real Linux cursor and Take control button](docs/assets/relay-desktop.png)
 
@@ -27,14 +28,21 @@ audience needs to see what the agent sees—and step in when judgment matters.
   installation for runtime apps such as Electron packages.
 - Persistent home and approved-install state across normal container recreation.
 - An in-container `os-operator` skill and `relayctl.py` client for AI agents.
+- A pinned [Coddy Agent](https://github.com/coddy-project/coddy-agent) Go binary,
+  persistent conversations, and a first-party Go MCP computer server.
+- A responsive Coddy flight-recorder panel with task streaming, tool activity,
+  stop controls, and explicit permission decisions.
 
 ## Quick start
 
-You need Docker Engine with Compose and roughly 2.5 GB of image space.
+You need Docker Engine with Compose, an OpenAI-compatible API key, and roughly
+3 GB of image space.
 
 ```bash
 git clone https://github.com/jahrulnr/virtual-desktop.git
 cd virtual-desktop
+cp .env.example .env
+# Edit OPENAI_API_KEY and, when needed, OPENAI_BASE_URL / OPENAI_MODEL.
 docker compose up -d --build
 ```
 
@@ -42,13 +50,31 @@ Open <http://127.0.0.1:3000>, enter the local VNC password `testtest`, and click
 **Open desktop**. The browser begins in observer mode; click **Take control** only
 when you want keyboard and pointer events to enter the desktop.
 
-The included credentials—`testtest` for VNC and `test-control-token` for the AI
-control API—are predictable development fixtures. The port is deliberately bound
-to loopback. Before any non-disposable or remotely reachable run, override both:
+Open the **C** button to give Coddy an outcome. Clicking **Run task** explicitly
+releases your human lease, then Coddy observes and operates the same desktop. The
+human can still preempt it at any moment with **Take control**.
+
+OpenRouter is one supported example:
+
+```dotenv
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_API_KEY=sk-or-v1-replace-me
+OPENAI_MODEL=openai/gpt-4o
+```
+
+Any gateway that implements the OpenAI chat-completions contract can be used. A
+multimodal model is strongly recommended because inaccessible canvas and Electron
+surfaces require screenshots.
+
+The included VNC, control, MCP, and Coddy credentials are predictable development
+fixtures. The port is deliberately bound to loopback. Before any non-disposable
+or remotely reachable run, replace all four values in `.env`:
 
 ```bash
 VNC_PASSWORD='replace-with-at-least-8-characters' \
 CONTROL_TOKEN='replace-with-at-least-32-random-characters' \
+MCP_AUTH_TOKEN='replace-with-at-least-32-random-characters' \
+CODDY_HTTP_TOKEN='replace-with-at-least-32-random-characters' \
 docker compose up -d --build
 ```
 
@@ -71,7 +97,16 @@ changes who may send input, not which desktop they are connected to.
 Human claims always win. A preempted agent receives HTTP 409 on its next heartbeat
 or input request, so a well-behaved operator stops immediately.
 
-## Operating the desktop with an AI
+## Operating the desktop with Coddy or another AI
+
+Coddy reaches the desktop through an internal Streamable HTTP MCP server. Its
+`computer` tool exposes screenshot, smooth pointer movement, clicks and drag,
+mouse down/up, cursor position, typing, key chords, hold-key, four-direction
+scroll, wait, and release-control. `ui_inspect` returns a bounded AT-SPI tree.
+
+This split is deliberate: Coddy handles model/session/tool orchestration while the
+small Go sidecar owns the stable computer-use contract. Replacing Coddy later does
+not require replacing the desktop API.
 
 The image installs the agent skill at
 `/home/desktop/.agents/skills/os-operator`. Its helper wraps lease management,
@@ -112,10 +147,10 @@ the control API into a root shell.
 ## Persistence and reset
 
 `docker compose down` preserves the desktop home directory, browser profile,
-Downloads, user-local applications, and approved-install manifest. Bring the same
-session back with `docker compose up -d`.
+Downloads, user-local applications, approved-install manifest, and Coddy session
+history. Bring the same session back with `docker compose up -d`.
 
-To deliberately erase both named volumes:
+To deliberately erase all named volumes:
 
 ```bash
 docker compose down -v
@@ -125,11 +160,12 @@ docker compose up -d --build
 ## Architecture at a glance
 
 ```text
-browser ── noVNC/WebSocket ──┐
-                             ├── Xvfb :0 + XFCE + desktop apps
-AI client ── bounded API ────┘          │
-       │                                └── persistent /home/desktop
-       └── human-approved plan ── root install broker
+browser ── noVNC/WebSocket ───────┐
+browser ── allowlisted gateway ───┼── desktop container
+                                  │      └── Xvfb :0 + XFCE + apps
+Coddy agent ── MCP ── Go sidecar ─┘
+        │                  └── bounded Relay control API
+        └── persistent sessions
 ```
 
 Nginx exposes one loopback origin. x11vnc and the AI input adapter talk to the
@@ -152,6 +188,7 @@ The manual two-controller walkthrough is in [docs/TESTING.md](docs/TESTING.md).
 
 - [Architecture and design decisions](docs/ARCHITECTURE.md)
 - [Operator and handoff API](docs/API.md)
+- [Running Coddy with OpenAI-compatible providers](docs/CODDY.md)
 - [Security boundary and hardening](docs/SECURITY.md)
 - [Testing and manual control handoff](docs/TESTING.md)
 - [Implementation specification](docs/SPEC.md)
