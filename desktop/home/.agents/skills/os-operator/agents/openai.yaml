@@ -1,0 +1,4 @@
+interface:
+  display_name: "OS Operator"
+  short_description: "Observe and control the shared Linux desktop"
+  default_prompt: "Use $os-operator to operate the shared Linux desktop safely."

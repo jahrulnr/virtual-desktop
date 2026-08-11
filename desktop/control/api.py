@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""Single-origin HTTP contract for human handoff and AI desktop control."""
+
+from __future__ import annotations
+
+import argparse
+import hmac
+import json
+import os
+import socket
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Protocol
+from urllib.parse import urlsplit
+
+from .domain import ConflictError, ControlLease, ValidationError
+from .input_controller import InputController, SubprocessRunner
+
+
+class Broker(Protocol):
+    def request(self, document: dict[str, object]) -> dict[str, object]: ...
+
+
+class ScreenshotSource(Protocol):
+    def capture(self) -> bytes: ...
+
+
+class AccessibilitySource(Protocol):
+    def snapshot(self) -> dict[str, object]: ...
+
+
+class BrokerClient:
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def request(self, document: dict[str, object]) -> dict[str, object]:
+        payload = json.dumps(document).encode("utf-8") + b"\n"
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(920)
+            client.connect(self.path)
+            client.sendall(payload)
+            response = bytearray()
+            while not response.endswith(b"\n") and len(response) <= 65536:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                response.extend(chunk)
+        if len(response) > 65536:
+            raise RuntimeError("install broker response is too large")
+        document = json.loads(response)
+        if not document.get("ok"):
+            error = document.get("error", {})
+            message = error.get("message", "install broker rejected the request")
+            if error.get("code") == "ApprovalError":
+                raise ConflictError(message)
+            raise ValidationError(message)
+        return document["data"]
+
+
+class ScrotScreenshot:
+    def capture(self) -> bytes:
+        descriptor, raw_path = tempfile.mkstemp(prefix="relay-shot-", suffix=".png")
+        os.close(descriptor)
+        path = Path(raw_path)
+        try:
+            subprocess.run(["scrot", "--overwrite", str(path)], check=True, timeout=15)
+            return path.read_bytes()
+        finally:
+            path.unlink(missing_ok=True)
+
+
+class SocketAccessibility:
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def snapshot(self) -> dict[str, object]:
+        request = json.dumps({"maxNodes": 1000}).encode("utf-8") + b"\n"
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(15)
+            client.connect(self.path)
+            client.sendall(request)
+            response = bytearray()
+            while not response.endswith(b"\n") and len(response) <= 2 * 1024 * 1024:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                response.extend(chunk)
+        if len(response) > 2 * 1024 * 1024:
+            raise RuntimeError("accessibility response is too large")
+        document = json.loads(response)
+        if not document.get("ok"):
+            raise RuntimeError("accessibility adapter failed")
+        return document["data"]
+
+
+@dataclass(frozen=True)
+class Response:
+    status: int
+    body: bytes = b""
+    content_type: str = "application/json; charset=utf-8"
+
+
+def json_response(status: int, value: object) -> Response:
+    return Response(status, json.dumps(value, separators=(",", ":")).encode("utf-8"))
+
+
+class ControlApplication:
+    def __init__(
+        self,
+        *,
+        token: str,
+        human_token: str,
+        lease: ControlLease,
+        input_controller: InputController,
+        broker: Broker,
+        screenshotter: ScreenshotSource,
+        accessibility: AccessibilitySource,
+        width: int,
+        height: int,
+    ) -> None:
+        if len(token) < 12:
+            raise ValueError("operator token must have at least 12 characters")
+        if len(human_token) < 8:
+            raise ValueError("human control token must have at least 8 characters")
+        self.token = token
+        self.human_token = human_token
+        self.lease = lease
+        self.input = input_controller
+        self.broker = broker
+        self.screenshotter = screenshotter
+        self.accessibility = accessibility
+        self.width = width
+        self.height = height
+
+    def handle(
+        self, method: str, path: str, headers: object, body: object | None
+    ) -> Response:
+        try:
+            return self._dispatch(method, urlsplit(path).path, headers, body)
+        except ValidationError as error:
+            return self._error(422, "VALIDATION_ERROR", str(error))
+        except ConflictError as error:
+            return self._error(409, "CONTROL_CONFLICT", str(error))
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
+            return self._error(503, "DEPENDENCY_UNAVAILABLE", "desktop dependency failed")
+        except Exception:
+            return self._error(500, "INTERNAL_ERROR", "control service failed")
+
+    def _dispatch(
+        self, method: str, path: str, headers: object, body: object | None
+    ) -> Response:
+        if method == "GET" and path == "/api/v1/health":
+            return json_response(
+                200,
+                {
+                    "status": "ok",
+                    "display": {"width": self.width, "height": self.height},
+                    "control": self.lease.state(),
+                },
+            )
+        if method == "GET" and path == "/api/v1/control":
+            return json_response(200, self.lease.state())
+        if method == "GET" and path == "/api/v1/screenshot":
+            if not self._authorized(headers):
+                return self._unauthorized()
+            return Response(200, self.screenshotter.capture(), "image/png")
+        if method == "GET" and path == "/api/v1/accessibility":
+            if not self._authorized(headers):
+                return self._unauthorized()
+            return json_response(200, self.accessibility.snapshot())
+
+        if method != "POST":
+            return self._error(404, "NOT_FOUND", "route not found")
+        if not isinstance(body, dict):
+            raise ValidationError("request body must be a JSON object")
+
+        if path.startswith("/api/v1/control/human/"):
+            if not self._human_request(headers):
+                return self._error(403, "HUMAN_AUTH_REQUIRED", "valid human capability required")
+            return json_response(200, self._human_control(path.rsplit("/", 1)[-1], body))
+
+        if path == "/api/v1/approvals":
+            if not self._human_request(headers):
+                return self._error(403, "HUMAN_AUTH_REQUIRED", "valid human capability required")
+            return json_response(
+                201, self.broker.request({"action": "approve", "plan": body.get("plan")})
+            )
+
+        if not self._authorized(headers):
+            return self._unauthorized()
+
+        if path.startswith("/api/v1/control/agent/"):
+            return json_response(200, self._agent_control(path.rsplit("/", 1)[-1], body))
+        if path == "/api/v1/input":
+            agent_id = self._identifier(body.get("agentId"), "agentId")
+            self.input.apply(agent_id, body.get("actions"))
+            return Response(204)
+        if path == "/api/v1/installs":
+            result = self.broker.request(
+                {
+                    "action": "install",
+                    "approvalId": body.get("approvalId"),
+                    "plan": body.get("plan"),
+                }
+            )
+            return json_response(200, result)
+        return self._error(404, "NOT_FOUND", "route not found")
+
+    def _human_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
+        owner_id = self._identifier(body.get("sessionId"), "sessionId")
+        if action == "claim":
+            return self.lease.claim_human(owner_id)
+        if action == "heartbeat":
+            return self.lease.heartbeat("human", owner_id)
+        if action == "release":
+            return self.lease.release("human", owner_id)
+        raise ValidationError("unsupported human control action")
+
+    def _agent_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
+        owner_id = self._identifier(body.get("agentId"), "agentId")
+        if action == "claim":
+            return self.lease.claim_agent(owner_id)
+        if action == "heartbeat":
+            return self.lease.heartbeat("agent", owner_id)
+        if action == "release":
+            return self.lease.release("agent", owner_id)
+        raise ValidationError("unsupported agent control action")
+
+    @staticmethod
+    def _identifier(value: object, name: str) -> str:
+        if not isinstance(value, str) or not 1 <= len(value) <= 128:
+            raise ValidationError(f"{name} must contain 1 to 128 characters")
+        return value
+
+    def _authorized(self, headers: object) -> bool:
+        supplied = headers.get("Authorization", "")  # type: ignore[attr-defined]
+        expected = f"Bearer {self.token}"
+        return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
+
+    def _human_request(self, headers: object) -> bool:
+        supplied = headers.get("X-Human-Control-Token", "")  # type: ignore[attr-defined]
+        return isinstance(supplied, str) and hmac.compare_digest(supplied, self.human_token)
+
+    @staticmethod
+    def _error(status: int, code: str, message: str) -> Response:
+        return json_response(status, {"error": {"code": code, "message": message}})
+
+    def _unauthorized(self) -> Response:
+        return self._error(401, "UNAUTHORIZED", "valid operator bearer token required")
+
+
+class ControlRequestHandler(BaseHTTPRequestHandler):
+    server_version = "RelayControl/1"
+
+    def do_GET(self) -> None:
+        self._serve("GET")
+
+    def do_POST(self) -> None:
+        self._serve("POST")
+
+    def _serve(self, method: str) -> None:
+        body: object | None = None
+        if method == "POST":
+            raw_length = self.headers.get("Content-Length", "")
+            try:
+                length = int(raw_length)
+            except ValueError:
+                self._write(ControlApplication._error(400, "BAD_REQUEST", "invalid content length"))
+                return
+            if not 0 < length <= 65536:
+                self._write(ControlApplication._error(413, "PAYLOAD_TOO_LARGE", "body limit is 64 KiB"))
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+            except json.JSONDecodeError:
+                self._write(ControlApplication._error(400, "BAD_JSON", "body must be valid JSON"))
+                return
+        response = self.server.application.handle(  # type: ignore[attr-defined]
+            method, self.path, self.headers, body
+        )
+        self._write(response)
+
+    def _write(self, response: Response) -> None:
+        self.send_response(response.status)
+        self.send_header("Content-Type", response.content_type)
+        self.send_header("Content-Length", str(len(response.body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if response.body:
+            self.wfile.write(response.body)
+
+    def log_message(self, message: str, *args: object) -> None:
+        print(f"control-api: {message % args}", flush=True)
+
+
+class ControlHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, address: tuple[str, int], application: ControlApplication) -> None:
+        self.application = application
+        super().__init__(address, ControlRequestHandler)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--width", type=int, default=int(os.environ.get("WIDTH", "1440")))
+    parser.add_argument("--height", type=int, default=int(os.environ.get("HEIGHT", "900")))
+    parser.add_argument("--token-file", default="/run/ai-desktop/operator-token")
+    parser.add_argument("--human-token-file", default="/run/ai-desktop/human-token")
+    parser.add_argument("--broker-socket", default="/run/ai-desktop/installer.sock")
+    parser.add_argument("--accessibility-socket", default="/run/relay-access/a11y.sock")
+    args = parser.parse_args()
+    token = Path(args.token_file).read_text(encoding="utf-8").strip()
+    human_token = Path(args.human_token_file).read_text(encoding="utf-8").strip()
+    lease = ControlLease()
+    input_controller = InputController(
+        width=args.width,
+        height=args.height,
+        runner=SubprocessRunner(),
+        lease=lease,
+    )
+    app = ControlApplication(
+        token=token,
+        human_token=human_token,
+        lease=lease,
+        input_controller=input_controller,
+        broker=BrokerClient(args.broker_socket),
+        screenshotter=ScrotScreenshot(),
+        accessibility=SocketAccessibility(args.accessibility_socket),
+        width=args.width,
+        height=args.height,
+    )
+    ControlHTTPServer((args.host, args.port), app).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

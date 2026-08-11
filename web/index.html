@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111311">
+    <title>Relay desktop</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body data-owner="none">
+    <main class="relay-stage" id="relay-stage">
+      <div
+        id="desktop-screen"
+        class="desktop-screen"
+        tabindex="0"
+        aria-label="Remote Linux desktop. Take control before using keyboard or pointer input."
+      >
+        <div class="feed-placeholder" id="feed-placeholder">
+          <span class="relay-cube" aria-hidden="true"><i></i><i></i><i></i></span>
+          <p>Starting shared desktop</p>
+        </div>
+      </div>
+
+      <div class="stage-vignette" aria-hidden="true"></div>
+      <div class="observer-shield" aria-hidden="true"></div>
+
+      <header class="stage-header">
+        <div class="connection-chip" aria-label="Connection status">
+          <span class="status-dot" id="connection-dot" aria-hidden="true"></span>
+          <span id="connection-label">Connecting</span>
+        </div>
+
+        <div class="header-actions">
+          <div class="operator-chip" id="operator-chip" aria-live="polite">
+            <span class="operator-pulse" aria-hidden="true"></span>
+            <span id="operator-label">Desktop ready</span>
+          </div>
+          <button
+            class="icon-button"
+            id="open-tools"
+            type="button"
+            aria-controls="control-drawer"
+            aria-expanded="false"
+            aria-label="Open desktop controls"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <button class="control-pill take-control" id="take-control" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 12.5 8.2-6.1 1.3-3.1 5.2L5 3Z"/></svg>
+        <span>Take control</span>
+      </button>
+
+      <button class="control-pill release-control" id="release-control" type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 11V6.5a1.5 1.5 0 0 1 3 0V10M10.5 9V5.5a1.5 1.5 0 0 1 3 0V10m0-3a1.5 1.5 0 0 1 3 0v4m0-2a1.5 1.5 0 0 1 3 0v4c0 5-3.2 8-7.5 8-2.2 0-4-.7-5.5-2.5l-3.1-3.8a1.7 1.7 0 0 1 2.5-2.3L8 14"/></svg>
+        <span>Release control</span>
+      </button>
+
+      <aside class="control-drawer" id="control-drawer" aria-label="Desktop controls" hidden>
+        <div class="drawer-heading">
+          <div>
+            <p class="eyebrow">Shared session</p>
+            <h1>Relay Desktop</h1>
+          </div>
+          <button class="drawer-close" id="close-tools" type="button" aria-label="Close desktop controls">×</button>
+        </div>
+
+        <section class="lease-card">
+          <span class="lease-orbit" aria-hidden="true"></span>
+          <div>
+            <p class="eyebrow">Control lease</p>
+            <strong id="lease-owner">Observer</strong>
+            <span id="lease-detail">No input is being sent</span>
+          </div>
+        </section>
+
+        <div class="tool-grid">
+          <button class="drawer-tool" id="fullscreen" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5m13 5h5v-5"/></svg>
+            Fullscreen
+          </button>
+          <button class="drawer-tool" id="reconnect" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5m10.2-.8A8 8 0 0 0 6.1 7.1L4 9m16 6-2.1 1.9a8 8 0 0 1-13.1-4"/></svg>
+            Reconnect
+          </button>
+        </div>
+
+        <details class="approval-panel">
+          <summary>Install an application</summary>
+          <p class="panel-copy">Creates a short-lived approval for one exact install plan.</p>
+          <form id="approval-form">
+            <label for="install-kind">Source</label>
+            <select id="install-kind" name="kind">
+              <option value="apt">APT repository</option>
+              <option value="deb">Local .deb file</option>
+            </select>
+            <label for="install-value" id="install-value-label">Package names</label>
+            <input id="install-value" name="value" type="text" autocomplete="off" placeholder="firefox-esr jq" required>
+            <button class="approve-action" type="submit">Approve exact plan</button>
+            <output id="approval-output" aria-live="polite"></output>
+          </form>
+        </details>
+
+        <footer class="drawer-footer">
+          <span>OS cursor</span><span>AT-SPI + vision</span><span>noVNC</span>
+        </footer>
+      </aside>
+    </main>
+
+    <dialog id="credentials-dialog" class="credentials-dialog">
+      <form id="credentials-form" method="dialog">
+        <span class="relay-cube dialog-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <p class="eyebrow">Private desktop</p>
+        <h2>Connect to Relay</h2>
+        <p>Enter the VNC password configured in Compose. The local development default is <code>testtest</code>.</p>
+        <label for="vnc-password">VNC password</label>
+        <input id="vnc-password" type="password" autocomplete="current-password" required autofocus>
+        <button class="dialog-action" value="connect">Open desktop</button>
+      </form>
+    </dialog>
+
+    <div id="announcer" class="visually-hidden" aria-live="assertive"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

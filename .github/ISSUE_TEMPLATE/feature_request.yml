@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a focused improvement to Relay AI Desktop.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who encounters the problem, and during which desktop or demo workflow?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior rather than only an implementation choice.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Security, control, and persistence impact
+      description: Note any effect on human takeover, AI authority, network access, package installs, privileges, or saved state.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What simpler approach or workaround did you try?
