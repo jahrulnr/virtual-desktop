@@ -30,4 +30,4 @@ smoke:
 	./tests/container-smoke.sh
 
 logs:
-	docker compose logs --no-color desktop computer-mcp coddy
+	docker compose logs --no-color desktop

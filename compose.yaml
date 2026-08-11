@@ -9,8 +9,8 @@ services:
     ports:
       - "127.0.0.1:3000:8080"
     shm_size: "1gb"
-    # Chromium/Electron create nested sandbox namespaces. Docker's default seccomp
-    # profile blocks those syscalls; see docs/SECURITY.md before changing exposure.
+    # Chromium/Electron create nested sandbox namespaces that Docker's default
+    # seccomp profile blocks.
     security_opt:
       - seccomp=unconfined
     cap_drop:
@@ -21,8 +21,7 @@ services:
       WIDTH: "1440"
       HEIGHT: "900"
       RESTORE_INSTALLS: "true"
-      # Deterministic loopback-only development fixtures. Override both before
-      # exposing Relay beyond this local Compose setup.
+      # Deterministic fixtures for the loopback-only community setup.
       VNC_PASSWORD: "${VNC_PASSWORD:-testtest}"
       CONTROL_TOKEN: "${CONTROL_TOKEN:-test-control-token}"
       CODDY_BASE_URL: "http://127.0.0.1:12345"
