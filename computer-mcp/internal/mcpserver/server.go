@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/relay-ai/desktop/computer-mcp/internal/computer"
@@ -46,4 +47,14 @@ func New(service *computer.Service) *mcp.Server {
 	})
 
 	return server
+}
+
+func NewHTTPHandler(service *computer.Service) http.Handler {
+	return mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return New(service) },
+		&mcp.StreamableHTTPOptions{
+			Stateless:           true,
+			MaxRequestBodyBytes: 256 << 10,
+		},
+	)
 }

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -78,5 +79,34 @@ func TestUIInspectReturnsAccessibilityJSON(t *testing.T) {
 	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok || text.Text != `{"role":"desktop frame","children":[]}` {
 		t.Fatalf("content = %#v", result.Content)
+	}
+}
+
+func TestHTTPTransportIsStateless(t *testing.T) {
+	ctx := context.Background()
+	httpServer := httptest.NewServer(NewHTTPHandler(computer.NewService(fakeBackend{}, "coddy-test")))
+	defer httpServer.Close()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if session.ID() != "" {
+		t.Fatalf("stateless transport returned session ID %q", session.ID())
+	}
+
+	for range 2 {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "computer",
+			Arguments: map[string]any{"action": "cursor_position"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Content) != 1 {
+			t.Fatalf("content length = %d", len(result.Content))
+		}
 	}
 }
