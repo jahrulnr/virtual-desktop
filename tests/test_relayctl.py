@@ -81,6 +81,19 @@ class RelayClientTests(unittest.TestCase):
 
         self.assertEqual(client.screenshot(), b"\x89PNG\r\n\x1a\n")
 
+    def test_cursor_uses_operator_capability(self):
+        opener = RecordingOpener(FakeResponse(b'{"x":412,"y":265}'))
+        client = relayctl.RelayClient(
+            base_url="http://127.0.0.1:3000",
+            token="operator-test-token",
+            opener=opener,
+        )
+
+        self.assertEqual(client.cursor(), {"x": 412, "y": 265})
+        request, _ = opener.requests[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:3000/api/v1/cursor")
+        self.assertEqual(request.headers["Authorization"], "Bearer operator-test-token")
+
 
 if __name__ == "__main__":
     unittest.main()

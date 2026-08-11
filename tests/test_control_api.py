@@ -11,9 +11,13 @@ from desktop.control.domain import ControlLease
 class FakeInput:
     def __init__(self):
         self.calls = []
+        self.preemptions = 0
 
     def apply(self, owner_id, actions):
         self.calls.append((owner_id, actions))
+
+    def preempt(self):
+        self.preemptions += 1
 
 
 class FakeBroker:
@@ -33,6 +37,11 @@ class FakeAccessibility:
         return {"role": "desktop frame", "name": "Relay desktop", "children": []}
 
 
+class FakeCursor:
+    def position(self):
+        return {"x": 321, "y": 123, "screen": 0, "window": 456}
+
+
 class ControlAPITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -46,6 +55,7 @@ class ControlAPITests(unittest.TestCase):
             broker=FakeBroker(),
             screenshotter=FakeScreenshot(),
             accessibility=FakeAccessibility(),
+            cursor=FakeCursor(),
             width=1440,
             height=900,
         )
@@ -98,6 +108,7 @@ class ControlAPITests(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "UNAUTHORIZED")
 
     def test_human_claim_requires_capability_and_preempts_agent(self):
+        before = self.input.preemptions
         self.request(
             "POST",
             "/api/v1/control/agent/claim",
@@ -118,6 +129,7 @@ class ControlAPITests(unittest.TestCase):
         self.assertEqual(rejected, 403)
         self.assertEqual(accepted, 200)
         self.assertEqual(body["owner"], "human")
+        self.assertEqual(self.input.preemptions, before + 1)
 
     def test_operator_token_cannot_authorize_human_approval(self):
         rejected, _, body = self.request(
@@ -169,6 +181,17 @@ class ControlAPITests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["role"], "desktop frame")
+
+    def test_cursor_position_requires_operator_token(self):
+        rejected, _, body = self.request("GET", "/api/v1/cursor")
+        accepted, _, position = self.request(
+            "GET", "/api/v1/cursor", token="test-operator-token"
+        )
+
+        self.assertEqual(rejected, 401)
+        self.assertEqual(body["error"]["code"], "UNAUTHORIZED")
+        self.assertEqual(accepted, 200)
+        self.assertEqual(position, {"x": 321, "y": 123, "screen": 0, "window": 456})
 
 
 if __name__ == "__main__":

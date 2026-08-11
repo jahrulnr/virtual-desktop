@@ -33,6 +33,10 @@ class AccessibilitySource(Protocol):
     def snapshot(self) -> dict[str, object]: ...
 
 
+class CursorSource(Protocol):
+    def position(self) -> dict[str, int]: ...
+
+
 class BrokerClient:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -97,6 +101,27 @@ class SocketAccessibility:
         return document["data"]
 
 
+class XdotoolCursor:
+    FIELDS = {"X": "x", "Y": "y", "SCREEN": "screen", "WINDOW": "window"}
+
+    def position(self) -> dict[str, int]:
+        result = subprocess.run(
+            ["xdotool", "getmouselocation", "--shell"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        values: dict[str, int] = {}
+        for line in result.stdout.splitlines():
+            name, separator, raw_value = line.partition("=")
+            if separator and name in self.FIELDS:
+                values[self.FIELDS[name]] = int(raw_value)
+        if set(values) != set(self.FIELDS.values()):
+            raise RuntimeError("xdotool returned an incomplete cursor position")
+        return values
+
+
 @dataclass(frozen=True)
 class Response:
     status: int
@@ -119,6 +144,7 @@ class ControlApplication:
         broker: Broker,
         screenshotter: ScreenshotSource,
         accessibility: AccessibilitySource,
+        cursor: CursorSource,
         width: int,
         height: int,
     ) -> None:
@@ -133,6 +159,7 @@ class ControlApplication:
         self.broker = broker
         self.screenshotter = screenshotter
         self.accessibility = accessibility
+        self.cursor = cursor
         self.width = width
         self.height = height
 
@@ -172,6 +199,10 @@ class ControlApplication:
             if not self._authorized(headers):
                 return self._unauthorized()
             return json_response(200, self.accessibility.snapshot())
+        if method == "GET" and path == "/api/v1/cursor":
+            if not self._authorized(headers):
+                return self._unauthorized()
+            return json_response(200, self.cursor.position())
 
         if method != "POST":
             return self._error(404, "NOT_FOUND", "route not found")
@@ -213,7 +244,9 @@ class ControlApplication:
     def _human_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
         owner_id = self._identifier(body.get("sessionId"), "sessionId")
         if action == "claim":
-            return self.lease.claim_human(owner_id)
+            state = self.lease.claim_human(owner_id)
+            self.input.preempt()
+            return state
         if action == "heartbeat":
             return self.lease.heartbeat("human", owner_id)
         if action == "release":
@@ -227,7 +260,9 @@ class ControlApplication:
         if action == "heartbeat":
             return self.lease.heartbeat("agent", owner_id)
         if action == "release":
-            return self.lease.release("agent", owner_id)
+            state = self.lease.release("agent", owner_id)
+            self.input.preempt()
+            return state
         raise ValidationError("unsupported agent control action")
 
     @staticmethod
@@ -336,6 +371,7 @@ def main() -> None:
         broker=BrokerClient(args.broker_socket),
         screenshotter=ScrotScreenshot(),
         accessibility=SocketAccessibility(args.accessibility_socket),
+        cursor=XdotoolCursor(),
         width=args.width,
         height=args.height,
     )

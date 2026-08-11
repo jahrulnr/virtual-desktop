@@ -86,6 +86,9 @@ class RelayClient:
             "GET", "/api/v1/screenshot", expect_bytes=True
         )  # type: ignore[return-value]
 
+    def cursor(self) -> dict[str, object]:
+        return self._request("GET", "/api/v1/cursor")  # type: ignore[return-value]
+
     def accessibility(self) -> dict[str, object]:
         return self._request("GET", "/api/v1/accessibility")  # type: ignore[return-value]
 
@@ -122,6 +125,7 @@ def parser() -> argparse.ArgumentParser:
     input_command.add_argument("--actions", required=True, type=json_argument)
     shot = commands.add_parser("screenshot")
     shot.add_argument("--out", required=True)
+    commands.add_parser("cursor")
     commands.add_parser("accessibility")
     install = commands.add_parser("install")
     install.add_argument("--approval-id", required=True)
@@ -147,6 +151,8 @@ def main() -> int:
             path = Path(args.out)
             path.write_bytes(client.screenshot())
             result = {"status": "saved", "path": str(path)}
+        elif args.command == "cursor":
+            result = client.cursor()
         elif args.command == "accessibility":
             result = client.accessibility()
         else:
