@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -22,10 +23,17 @@ MAX_INPUT_BYTES = 4096
 
 
 class TmuxBridge:
-    def __init__(self, *, user: str = "desktop", home: Path = Path("/home/desktop")) -> None:
-        self.user = user
-        self.home = home
-        self.socket_dir = Path(f"/run/user/{1000}/relay-tmux")
+    def __init__(
+        self,
+        *,
+        user: str | None = None,
+        home: Path | None = None,
+        socket_dir: Path | None = None,
+    ) -> None:
+        self.user = user or os.environ.get("RELAY_DESKTOP_USER", "desktop")
+        self.home = Path(home or os.environ.get("RELAY_DESKTOP_HOME", "/home/desktop"))
+        runtime = os.environ.get("XDG_RUNTIME_DIR", "/run/user/1000")
+        self.socket_dir = Path(socket_dir or os.environ.get("RELAY_TMUX_SOCKET_DIR", f"{runtime}/relay-tmux"))
         self.socket_path = self.socket_dir / "relay.sock"
 
     def _run(self, command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -80,13 +88,13 @@ class TmuxBridge:
                 str(self.socket_path),
                 "list-sessions",
                 "-F",
-                "#{session_name}\t#{session_created}\t#{session_activity}",
+                "#{session_name}|#{session_created}|#{session_activity}",
             ],
             check=False,
         )
         sessions: list[dict[str, object]] = []
         for line in result.stdout.splitlines():
-            name, created, activity = (line.split("\t") + ["", "", ""])[:3]
+            name, created, activity = (line.split("|") + ["", "", ""])[:3]
             if not SESSION_PATTERN.fullmatch(name):
                 continue
             sessions.append(

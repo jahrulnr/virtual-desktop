@@ -36,11 +36,11 @@ class RecordingState:
 
 
 class ScreenRecorder:
-    OUTPUT_DIR = Path("/home/desktop/Downloads/recordings")
+    OUTPUT_DIR = Path(os.environ.get("RELAY_RECORDING_DIR", "/home/desktop/Downloads/recordings"))
     MAX_BYTES = 512 * 1024 * 1024
 
-    def __init__(self, *, display: str = ":0", width: int = 1440, height: int = 900) -> None:
-        self.display = display
+    def __init__(self, *, display: str | None = None, width: int = 1440, height: int = 900) -> None:
+        self.display = display or os.environ.get("DISPLAY", ":0")
         self.width = width
         self.height = height
         self._lock = threading.RLock()

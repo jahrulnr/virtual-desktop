@@ -11,6 +11,18 @@ docker compose up -d --build
 make smoke
 ```
 
+When Docker is unavailable, a temporary host stack can exercise lease, input,
+screenshot, recording, and tmux on an isolated Xvfb `:99` display. It does not
+start Coddy, Chromium, AT-SPI, the install broker, or Selkies, and it must not
+attach to an existing desktop such as Cloud Agent TigerVNC on `:1`:
+
+```bash
+make native-smoke
+make native-down
+```
+
+The native UI is `http://127.0.0.1:8080` with VNC password `testtest`.
+
 The default local VNC password is `testtest`; the matching operator fixture is
 `test-control-token`. They are intentionally predictable fixtures for the
 loopback community setup.

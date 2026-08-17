@@ -29,6 +29,7 @@ Coddy with a Go MCP computer server.
 make test      # unit + Go + web tests
 make static    # syntax, compose, skill, and layout invariants
 make smoke     # live container framebuffer, input, and handoff (needs Docker)
+make native-smoke  # Docker-less Xvfb :99 stack for host environments
 ```
 
 Manual handoff checklist: `docs/TESTING.md`.

@@ -1,4 +1,4 @@
-.PHONY: build up down reset test test-go test-web static smoke logs
+.PHONY: build up down reset test test-go test-web static smoke logs native native-down native-smoke native-status
 
 build:
 	docker compose build
@@ -28,6 +28,18 @@ static:
 
 smoke:
 	./tests/container-smoke.sh
+
+native:
+	./desktop/scripts/run-native.sh start
+
+native-down:
+	./desktop/scripts/run-native.sh stop
+
+native-status:
+	./desktop/scripts/run-native.sh status
+
+native-smoke:
+	./desktop/scripts/run-native.sh smoke
 
 logs:
 	docker compose logs --no-color desktop
