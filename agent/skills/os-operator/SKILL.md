@@ -25,8 +25,10 @@ private HTTP API directly.
 Coordinates are framebuffer pixels in a 1440×900 desktop. `computer` accepts:
 `screenshot`, `mouse_move`, click variants, `left_click_drag`, mouse down/up,
 `cursor_position`, `type`, `key`, `hold_key`, `scroll`, `wait`, and
-`release_control`. Key combinations use plus-separated xdotool names such as
-`ctrl+l` or `ctrl+shift+t`.
+`release_control`. Pointer-targeted actions may omit `coordinate` to act at the
+current pointer. Key combinations use plus-separated xdotool names such as
+`ctrl+l` or `ctrl+shift+t`. `wait` holds the agent lease, so a human takeover
+cancels it.
 
 ## Grounding and recovery
 

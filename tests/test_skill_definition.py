@@ -33,6 +33,11 @@ class SkillDefinitionTests(unittest.TestCase):
         self.assertIn("$os-operator", metadata)
         self.assertTrue((SKILL_ROOT / "scripts/relayctl.py").is_file())
 
+    def test_scroll_example_uses_the_wire_delta_field(self):
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn('"delta":3', content)
+        self.assertNotIn('"amount":3', content)
+
 
 if __name__ == "__main__":
     unittest.main()

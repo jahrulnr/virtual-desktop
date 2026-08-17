@@ -87,19 +87,21 @@ Berikan outcome yang dapat diverifikasi, misalnya:
 Saat **Run task** ditekan, UI melepaskan lease manusia bila lease itu sedang aktif.
 Coddy kemudian memakai `ui_inspect` dan screenshot untuk grounding, menjalankan
 aksi kecil, dan mengalirkan outcome, tool activity, serta error sebagai timeline
-Markdown yang sudah dirender.
+Markdown yang sudah dirender. Tombol **Take control** tetap di chrome, jadi
+framebuffer tidak tertutup saat kamu memantau agent.
 
 ## 4. Ambil alih tanpa mengganti sesi
 
-Ketika Coddy sedang bekerja, klik **Take control**. Lease manusia selalu
-mem-preempt lease agent. Input MCP berikutnya menerima conflict dan agent berhenti,
-sementara window, aplikasi, pointer OS, dan framebuffer tetap sama.
+Ketika Coddy sedang bekerja, klik **Take control** atau tekan `Alt+Shift+C`.
+Lease manusia selalu mem-preempt lease agent. Turn Coddy yang sedang berjalan
+dibatalkan. Input MCP berikutnya menerima conflict dan agent berhenti, sementara
+window, aplikasi, pointer OS, dan framebuffer tetap sama.
 
 Pada observer mode, shield transparan berada di atas canvas noVNC. Pointer browser
 tetap terlihat, tetapi event belum masuk ke desktop. Shield dilepas setelah
 takeover berhasil; saat itulah keyboard dan pointer dikirim ke noVNC. Klik
-**Release control** untuk kembali menjadi observer. Coddy dapat mengambil lease
-baru dan melanjutkan dari layar yang sama.
+**Release** atau tekan `Alt+Shift+C` untuk kembali menjadi observer. Coddy dapat
+mengambil lease baru dan melanjutkan dari layar yang sama.
 
 ## 5. Pastikan state selamat dari down/up
 

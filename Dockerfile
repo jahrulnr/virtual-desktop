@@ -73,10 +73,10 @@ RUN groupadd --gid 1000 desktop \
     && groupadd --gid 1003 coddy \
     && useradd --uid 1000 --gid desktop --groups relayaccess --create-home --shell /bin/bash desktop \
     && useradd --uid 1001 --gid relayapi --groups relayaccess --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin relayapi \
-    && useradd --uid 1002 --gid coddy --no-create-home --home-dir /var/lib/coddy --shell /usr/sbin/nologin coddy \
-    && install -d -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop \
+    && useradd --uid 1002 --gid coddy --groups desktop --no-create-home --home-dir /var/lib/coddy --shell /usr/sbin/nologin coddy \
+    && install -d -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop /home/desktop/workspace \
     && install -d -o coddy -g coddy -m 0700 /var/lib/coddy \
-    && install -d -o coddy -g coddy -m 0750 /workspace /opt/relay-agent/skills/os-operator \
+    && install -d -o coddy -g coddy -m 0750 /opt/relay-agent/skills/os-operator \
     && install -d /opt/relay/control /opt/relay/broker /opt/relay/web /usr/share/licenses/coddy
 
 COPY --from=computer-mcp-build /out/relay-computer-mcp /usr/local/bin/relay-computer-mcp

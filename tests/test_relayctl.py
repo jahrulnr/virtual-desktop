@@ -94,6 +94,19 @@ class RelayClientTests(unittest.TestCase):
         self.assertEqual(request.full_url, "http://127.0.0.1:3000/api/v1/cursor")
         self.assertEqual(request.headers["Authorization"], "Bearer operator-test-token")
 
+    def test_install_uses_the_long_broker_timeout(self):
+        opener = RecordingOpener(FakeResponse(b'{"status":"installed"}'))
+        client = relayctl.RelayClient(
+            base_url="http://127.0.0.1:3000",
+            token="operator-test-token",
+            opener=opener,
+        )
+
+        client.install("approval-1", {"kind": "apt", "packages": ["jq"]})
+
+        _, timeout = opener.requests[0]
+        self.assertEqual(timeout, 920)
+
 
 if __name__ == "__main__":
     unittest.main()

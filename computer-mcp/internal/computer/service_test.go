@@ -82,6 +82,57 @@ func TestScreenshotIsReturnedAsImageObservation(t *testing.T) {
 	}
 }
 
+func TestWaitGoesThroughRelaySoHumanPreemptionCanCancelIt(t *testing.T) {
+	backend := &fakeRelay{}
+	service := NewService(backend, "coddy-session")
+
+	result, err := service.Execute(context.Background(), Input{Action: "wait", Duration: 0.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "Waited 0.250 seconds." {
+		t.Fatalf("text = %q", result.Text)
+	}
+	if len(backend.actions) != 1 || backend.actions[0].Type != "wait" || backend.actions[0].DurationMS != 250 {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+}
+
+func TestClickWithoutCoordinateActsAtCurrentPointer(t *testing.T) {
+	backend := &fakeRelay{cursor: relay.CursorPosition{X: 40, Y: 50}}
+	service := NewService(backend, "coddy-session")
+
+	result, err := service.Execute(context.Background(), Input{Action: "left_click"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "left click at the current pointer." {
+		t.Fatalf("text = %q", result.Text)
+	}
+	if len(backend.actions) != 1 || backend.actions[0].Type != "click" {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+}
+
+func TestSmoothMoveSkipsWhenPointerIsAlreadyThere(t *testing.T) {
+	backend := &fakeRelay{cursor: relay.CursorPosition{X: 20, Y: 30}}
+	service := NewService(backend, "coddy-session")
+
+	_, err := service.Execute(context.Background(), Input{
+		Action:     "mouse_move",
+		Coordinate: []int{20, 30},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.actions) != 0 {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+	if backend.claims != 0 {
+		t.Fatalf("claims = %d", backend.claims)
+	}
+}
+
 func TestRejectsInvalidCoordinatesBeforeCallingDesktop(t *testing.T) {
 	backend := &fakeRelay{}
 	service := NewService(backend, "coddy-session")

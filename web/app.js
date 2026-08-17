@@ -90,8 +90,14 @@ function connect() {
     placeholder?.remove();
     setConnection("connected", "Signal live");
     announcer.textContent = "Remote desktop connected";
+    bindClipboard(rfb);
+    pushLocalClipboard();
   });
   rfb.addEventListener("credentialsrequired", () => {
+    if (humanToken) {
+      rfb.sendCredentials({ password: humanToken });
+      return;
+    }
     if (!credentialsDialog.open) credentialsDialog.showModal();
     passwordInput.focus();
   });
@@ -161,6 +167,33 @@ function renderLease(state) {
   }
 }
 
+function bindClipboard(session) {
+  session.addEventListener("clipboard", (event) => {
+    const text = event.detail?.text;
+    if (typeof text === "string") navigator.clipboard?.writeText(text).catch(() => {});
+  });
+}
+
+async function pushLocalClipboard() {
+  if (!rfb || rfb.viewOnly || !navigator.clipboard?.readText) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) rfb.clipboardPasteFrom(text);
+  } catch {
+    /* Clipboard permission is optional; keyboard input still works. */
+  }
+}
+
+async function stopAgentTurn() {
+  const running = Boolean(agentAbort);
+  agentAbort?.abort();
+  if (!running || !humanToken) return;
+  await agentFetch(`/coddy/sessions/${agentSessionId}/cancel`, {
+    method: "POST",
+    body: "{}",
+  }).catch(() => null);
+}
+
 async function refreshLease() {
   try {
     renderLease(await api("/api/v1/control", { method: "GET", headers: {} }));
@@ -171,6 +204,7 @@ async function refreshLease() {
 
 takeControl.addEventListener("click", async () => {
   try {
+    await stopAgentTurn();
     const state = await api("/api/v1/control/human/claim", {
       method: "POST",
       human: true,
@@ -178,6 +212,7 @@ takeControl.addEventListener("click", async () => {
     });
     renderLease(state);
     screen.focus();
+    pushLocalClipboard();
     announcer.textContent = "You now control the remote desktop";
   } catch (error) {
     announcer.textContent = error.message;
@@ -230,6 +265,13 @@ openAgent.addEventListener("click", () => toggleAgent(agentDrawer.hidden));
 closeAgent.addEventListener("click", () => toggleAgent(false));
 
 document.addEventListener("keydown", (event) => {
+  if (event.altKey && event.shiftKey && event.code === "KeyC" && !event.repeat) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (document.body.dataset.owner === "human-self") releaseControl.click();
+    else takeControl.click();
+    return;
+  }
   if (event.key === "Escape" && !drawer.hidden) {
     drawer.hidden = true;
     openTools.setAttribute("aria-expanded", "false");
@@ -237,7 +279,7 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "Escape" && !agentDrawer.hidden) {
     toggleAgent(false);
   }
-});
+}, true);
 
 document.querySelector("#fullscreen").addEventListener("click", async () => {
   if (!document.fullscreenElement) await document.querySelector("#relay-stage").requestFullscreen();
@@ -656,14 +698,10 @@ agentPrompt.addEventListener("keydown", (event) => {
 });
 
 agentStop.addEventListener("click", async () => {
-  agentAbort?.abort();
-  await agentFetch(`/coddy/sessions/${agentSessionId}/cancel`, {
-    method: "POST",
-    body: "{}",
-  }).catch(() => null);
+  await stopAgentTurn();
 });
 
-setInterval(async () => {
+async function syncLease() {
   const current = await api("/api/v1/control", { method: "GET", headers: {} }).catch(() => null);
   if (!current) return;
   if (current.owner === "human" && current.ownerId === sessionId) {
@@ -673,10 +711,19 @@ setInterval(async () => {
       body: JSON.stringify({ sessionId }),
     }).catch(() => current);
     renderLease(renewed);
-  } else {
-    renderLease(current);
+    return;
   }
-}, 5000);
+  renderLease(current);
+}
+
+setInterval(syncLease, 5000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    syncLease();
+    pushLocalClipboard();
+  }
+});
+screen.addEventListener("focus", pushLocalClipboard);
 
 connect();
 refreshLease();

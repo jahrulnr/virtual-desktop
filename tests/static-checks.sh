@@ -3,8 +3,9 @@ set -eu
 
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q desktop
-docker compose config -q
-docker compose config --format json | python3 -c '
+if command -v docker >/dev/null 2>&1; then
+  docker compose config -q
+  docker compose config --format json | python3 -c '
 import json
 import sys
 
@@ -15,6 +16,18 @@ assert len(environment["VNC_PASSWORD"]) >= 8, "default VNC_PASSWORD must be at l
 assert len(environment["CONTROL_TOKEN"]) >= 12, "default CONTROL_TOKEN must be at least 12 characters"
 assert len(environment["CODDY_HTTP_TOKEN"]) >= 16
 '
+else
+  python3 -c '
+import pathlib
+import re
+text = pathlib.Path("compose.yaml").read_text()
+assert "127.0.0.1:3000:8080" in text
+assert re.search(r"VNC_PASSWORD:.*testtest", text)
+assert re.search(r"CONTROL_TOKEN:.*test-control-token", text)
+assert "CODDY_HTTP_TOKEN" in text
+print("compose.yaml fixtures checked without docker")
+'
+fi
 VNC_PASSWORD=test CONTROL_TOKEN=test-control-token CODDY_HTTP_TOKEN=test-coddy-http-token-change-me \
   desktop/scripts/validate-config.sh >/dev/null 2>&1 && {
     echo "short VNC_PASSWORD unexpectedly passed validation" >&2
@@ -46,6 +59,10 @@ rg -q '^COPY desktop/home/ /opt/relay/home-template/$' Dockerfile
 rg -q '/opt/relay/home-template' desktop/scripts/entrypoint.sh
 rg -q 'class="control-pill take-control"' web/index.html
 rg -q 'class="observer-shield"' web/index.html
+rg -qF 'aria-keyshortcuts="Alt+Shift+C"' web/index.html
+rg -q 'clipboardPasteFrom' web/app.js
+rg -q '/home/desktop/workspace' desktop/scripts/entrypoint.sh Dockerfile
+rg -q '^directory=/home/desktop/workspace$' desktop/config/supervisord.conf
 rg -q 'aria-controls="control-drawer"' web/index.html
 rg -q 'aria-controls="agent-drawer"' web/index.html
 rg -q 'X-Human-Control-Token' desktop/control/agent_gateway.py

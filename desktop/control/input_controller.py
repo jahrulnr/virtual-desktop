@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import subprocess
 import threading
-from collections.abc import Sequence
 from collections.abc import Callable
 from typing import Protocol
 

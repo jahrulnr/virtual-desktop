@@ -4,19 +4,18 @@
 from __future__ import annotations
 
 import argparse
-import hmac
 import json
 import os
 import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from .auth import secrets_match
 from .domain import ConflictError, ControlLease, ValidationError
 from .input_controller import InputController, SubprocessRunner
 
@@ -273,12 +272,11 @@ class ControlApplication:
 
     def _authorized(self, headers: object) -> bool:
         supplied = headers.get("Authorization", "")  # type: ignore[attr-defined]
-        expected = f"Bearer {self.token}"
-        return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
+        return secrets_match(supplied, f"Bearer {self.token}")
 
     def _human_request(self, headers: object) -> bool:
         supplied = headers.get("X-Human-Control-Token", "")  # type: ignore[attr-defined]
-        return isinstance(supplied, str) and hmac.compare_digest(supplied, self.human_token)
+        return secrets_match(supplied, self.human_token)
 
     @staticmethod
     def _error(status: int, code: str, message: str) -> Response:

@@ -12,9 +12,9 @@ import (
 )
 
 func main() {
-	baseURL := envOr("RELAY_BASE_URL", "http://desktop:8080")
+	baseURL := envOr("RELAY_BASE_URL", "http://127.0.0.1:8080")
 	operatorToken := os.Getenv("RELAY_OPERATOR_TOKEN")
-	client, err := relay.NewClient(baseURL, operatorToken, &http.Client{Timeout: 30 * time.Second})
+	client, err := relay.NewClient(baseURL, operatorToken, &http.Client{Timeout: 45 * time.Second})
 	if err != nil {
 		log.Fatal(err)
 	}

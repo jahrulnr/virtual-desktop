@@ -107,6 +107,17 @@ class ControlAPITests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertEqual(body["error"]["code"], "UNAUTHORIZED")
 
+    def test_wrong_length_operator_token_is_unauthorized_not_server_error(self):
+        status, _, body = self.request(
+            "POST",
+            "/api/v1/control/agent/claim",
+            {"agentId": "agent-1"},
+            token="short",
+        )
+
+        self.assertEqual(status, 401)
+        self.assertEqual(body["error"]["code"], "UNAUTHORIZED")
+
     def test_human_claim_requires_capability_and_preempts_agent(self):
         before = self.input.preemptions
         self.request(

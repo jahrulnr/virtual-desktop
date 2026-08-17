@@ -34,6 +34,7 @@ class RelayClient:
         *,
         auth: bool = True,
         expect_bytes: bool = False,
+        timeout: int = 20,
     ) -> object:
         headers = {"Content-Type": "application/json"}
         if auth:
@@ -48,7 +49,7 @@ class RelayClient:
             method=method,
         )
         try:
-            with self.opener(request, timeout=20) as response:
+            with self.opener(request, timeout=timeout) as response:
                 payload = response.read()
                 if expect_bytes:
                     return payload
@@ -99,6 +100,7 @@ class RelayClient:
             "POST",
             "/api/v1/installs",
             {"approvalId": approval_id, "plan": plan},
+            timeout=920,
         )  # type: ignore[return-value]
 
 

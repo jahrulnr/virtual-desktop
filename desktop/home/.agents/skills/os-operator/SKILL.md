@@ -48,7 +48,7 @@ python3 scripts/relayctl.py input --agent-id demo --actions '[
   {"type":"click","button":"left"},
   {"type":"text","text":"hello"},
   {"type":"key","keys":["CTRL","L"]},
-  {"type":"scroll","direction":"down","amount":3}
+  {"type":"scroll","direction":"down","delta":3}
 ]'
 ```
 

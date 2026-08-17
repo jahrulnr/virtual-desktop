@@ -82,16 +82,19 @@ human leases last 30 seconds while active clients heartbeat. A human claim alway
 preempts the agent. The interrupted tool receives HTTP 409, any held input is
 released, and both sides keep viewing the same applications and framebuffer.
 
-The browser removes its transparent shield only after receiving the human lease.
-**Release control** restores observer mode. Coddy can then claim a fresh agent
-lease and continue from the unchanged desktop.
+In observer mode the chrome keeps **Take control** visible without covering the
+framebuffer. **Release** lives in the same chrome. `Alt+Shift+C` toggles the
+lease. Taking control also cancels an in-flight Coddy turn so the model does not
+keep spending tokens against HTTP 409. Host and guest clipboards are synchronized
+while the human lease is live.
 
 ## Persistence
 
 Three named volumes keep useful community-demo state while the runtime remains one
 container:
 
-- `desktop-home` stores files, Downloads, browser data, and user-local apps;
+- `desktop-home` stores files, Downloads, browser data, user-local apps, and the
+  shared agent workspace at `/home/desktop/workspace` (also `/workspace`);
 - `desktop-state` stores successful approved-install plans for replay;
 - `coddy-state` stores conversations and transcripts.
 

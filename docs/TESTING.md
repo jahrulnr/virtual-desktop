@@ -43,7 +43,8 @@ Chromium should run as `desktop`, have renderer/zygote children, and must not co
 
 1. Start Relay and open `http://127.0.0.1:3000` in a browser. Enter the configured
    VNC password (`testtest` in the loopback-only Compose default). Leave the UI in
-   observer mode.
+   observer mode. The desktop framebuffer must stay fully visible; **Take control**
+   belongs in the chrome, not over the middle of the screen.
 2. In a terminal, read the local operator token and run the claim/input example in
    the README. Confirm the real cursor moves in the browser and the operator chip
    says **AI is operating**.
@@ -59,13 +60,16 @@ Chromium should run as `desktop`, have renderer/zygote children, and must not co
    done
    ```
 
-4. Click **Take control**. Confirm **Release control** appears, then type and move the
-   mouse inside the desktop. The AI heartbeat/input must receive 409 and the browser
-   remains on the same windows/session.
+4. Click **Take control** or press `Alt+Shift+C`. Confirm **Release** appears, then
+   type and move the mouse inside the desktop. Copy text on the host and paste it
+   in a desktop terminal, then copy inside the desktop and paste in the host. The
+   AI heartbeat/input must receive 409, an in-flight Coddy turn must stop, and the
+   browser remains on the same windows/session.
    Repeat once while the agent is executing a 10-second `wait` or `hold_key`: the
    claim must return promptly, the pending input request must become 409, and no key
    or mouse button may remain held.
-5. Click **Release control**. Have the agent claim again and move the pointer.
+5. Click **Release** or press `Alt+Shift+C`. Have the agent claim again and move the
+   pointer.
    Confirm the browser becomes view-only and immediately observes the agent's move.
 6. Optional multi-viewer check: open a second browser/private window. Both should
    see the same desktop and real cursor; a takeover in either window makes the other

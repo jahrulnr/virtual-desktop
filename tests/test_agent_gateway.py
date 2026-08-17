@@ -41,6 +41,7 @@ class AgentGatewayPolicyTests(unittest.TestCase):
         path = "/coddy/sessions/sess_0123456789abcdef/messages"
         self.assertTrue(RoutePolicy.session_matches(path, "sess_0123456789abcdef"))
         self.assertFalse(RoutePolicy.session_matches(path, "sess_ffffffffffffffff"))
+        self.assertFalse(RoutePolicy.session_matches(path, "sess_0123456789abcdef00"))
         self.assertFalse(RoutePolicy.session_matches(path, ""))
         self.assertTrue(RoutePolicy.session_matches("/v1/responses", "sess_0123456789abcdef"))
         self.assertFalse(RoutePolicy.session_matches("/v1/responses", ""))

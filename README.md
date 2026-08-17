@@ -26,7 +26,8 @@ audience needs to see what the agent sees—and step in when judgment matters.
 - Validated XTEST mouse and keyboard input; no arbitrary shell endpoint.
 - Chromium, Terminal, and Files included, with guarded APT or local `.deb`
   installation for runtime apps such as Electron packages.
-- Persistent home and approved-install state across normal container recreation.
+- Persistent home, a shared `~/workspace` the human can browse, approved-install
+  state, and Coddy conversations across normal container recreation.
 - An in-container `os-operator` skill and `relayctl.py` client for AI agents.
 - A pinned [Coddy Agent](https://github.com/coddy-project/coddy-agent) Go binary,
   persistent conversations, and a first-party Go MCP computer server.
@@ -88,10 +89,12 @@ changes who may send input, not which desktop they are connected to.
 1. The browser opens view-only behind a transparent input shield. Its ordinary
    browser cursor remains visible and cannot accidentally reach noVNC.
 2. An AI claims a short lease and sends bounded input through the control API.
-3. Clicking **Take control** preempts that AI lease, removes the shield, and lets
-   noVNC capture the human pointer and keyboard.
-4. Clicking **Release control** returns the browser to observer mode. The AI can
-   claim a fresh lease and continue from the exact same screen.
+3. Clicking **Take control** in the chrome (or pressing `Alt+Shift+C`) preempts
+   that AI lease, stops an in-flight Coddy turn, removes the shield, and lets
+   noVNC capture the human pointer, keyboard, and clipboard.
+4. Clicking **Release** or pressing `Alt+Shift+C` again returns the browser to
+   observer mode. The AI can claim a fresh lease and continue from the exact same
+   screen.
 
 Human claims always win. A preempted agent receives HTTP 409 on its next heartbeat
 or input request, so a well-behaved operator stops immediately.
@@ -101,7 +104,9 @@ or input request, so a well-behaved operator stops immediately.
 Coddy reaches the desktop through an internal Streamable HTTP MCP server. Its
 `computer` tool exposes screenshot, smooth pointer movement, clicks and drag,
 mouse down/up, cursor position, typing, key chords, hold-key, four-direction
-scroll, wait, and release-control. `ui_inspect` returns a bounded AT-SPI tree.
+scroll, wait, and release-control. Click and scroll may omit coordinates to act
+at the current pointer. `wait` holds the agent lease so a human takeover can
+cancel it. `ui_inspect` returns a bounded AT-SPI tree.
 
 Coddy handles model, session, and tool orchestration while the small Go MCP
 process owns the stable computer-use contract. Both run in the desktop container,
@@ -146,8 +151,9 @@ the control API into a root shell.
 ## Persistence and reset
 
 `docker compose down` preserves the desktop home directory, browser profile,
-Downloads, user-local applications, approved-install manifest, and Coddy session
-history. Bring the same session back with `docker compose up -d`.
+Downloads, the shared `workspace` folder, user-local applications, approved-install
+manifest, and Coddy session history. Bring the same session back with
+`docker compose up -d`.
 
 To deliberately erase all named volumes:
 

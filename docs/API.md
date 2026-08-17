@@ -92,8 +92,10 @@ credential. The server exposes:
 - `ui_inspect`, returning the bounded AT-SPI JSON snapshot.
 
 Screenshot results contain a real MCP `image` content block. Pointer-targeted
-actions accept `[x,y]` in the 1440×900 framebuffer and automatically obtain an
-agent lease. A live human lease is never preempted and surfaces as a tool error.
+actions accept `[x,y]` in the 1440×900 framebuffer, or omit `coordinate` to act
+at the current pointer, and automatically obtain an agent lease. `wait` is an
+input action on the live lease so human takeover can cancel it. A live human
+lease is never preempted and surfaces as a tool error.
 
 ## Browser-to-Coddy gateway
 
