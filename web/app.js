@@ -74,6 +74,8 @@ let agentSessionId = /^sess_[0-9a-f]{16,64}$/.test(storedAgentSession || "")
   : `sess_${crypto.randomUUID().replaceAll("-", "")}`;
 localStorage.setItem("relay.coddy.session", agentSessionId);
 let rfb;
+let selkiesFrame;
+let streamingBackend = "vnc";
 let reconnectTimer;
 let hasConnected = false;
 let humanToken = "";
@@ -156,23 +158,48 @@ function websocketUrl() {
   return `${protocol}//${location.host}/websockify`;
 }
 
-function setConnection(state, label) {
-  connectionDot.className = `status-dot ${state}`;
-  connectionLabel.textContent = label;
-  const chip = document.querySelector("#connection-chip");
-  if (chip) chip.setAttribute("aria-label", `Connection: ${label}`);
+async function detectStreamingBackend() {
+  try {
+    const health = await fetch("/api/v1/health", { cache: "no-store" }).then((response) => response.json());
+    streamingBackend = health?.streaming?.backend === "selkies" ? "selkies" : "vnc";
+    return health;
+  } catch {
+    streamingBackend = "vnc";
+    return null;
+  }
 }
 
-function setFeedStatus(label, sub = "") {
-  if (feedPlaceholderLabel) feedPlaceholderLabel.textContent = label;
-  if (feedPlaceholderSub) feedPlaceholderSub.textContent = sub;
-}
-
-function connect() {
-  clearTimeout(reconnectTimer);
+function disconnectStream() {
   if (rfb) {
     try { rfb.disconnect(); } catch { /* The transport is already gone. */ }
+    rfb = undefined;
   }
+  if (selkiesFrame) {
+    selkiesFrame.remove();
+    selkiesFrame = undefined;
+  }
+}
+
+function connectSelkies(path = "/selkies/") {
+  disconnectStream();
+  setConnection("", "Connecting");
+  setFeedStatus("Connecting to desktop", "Opening Selkies stream");
+  selkiesFrame = document.createElement("iframe");
+  selkiesFrame.src = path;
+  selkiesFrame.title = "Remote Linux desktop";
+  selkiesFrame.className = "selkies-frame";
+  selkiesFrame.allow = "autoplay; clipboard-read; clipboard-write; fullscreen";
+  selkiesFrame.addEventListener("load", () => {
+    hasConnected = true;
+    placeholder?.remove();
+    setConnection("connected", "Signal live");
+    announcer.textContent = "Remote desktop connected";
+  }, { once: true });
+  screen.appendChild(selkiesFrame);
+}
+
+function connectVnc() {
+  disconnectStream();
   setConnection("", "Connecting");
   setFeedStatus("Connecting to desktop", "Opening WebSocket to VNC bridge");
   rfb = new RFB(screen, websocketUrl(), { shared: true });
@@ -207,15 +234,50 @@ function connect() {
   });
 }
 
+async function connect() {
+  clearTimeout(reconnectTimer);
+  await detectStreamingBackend();
+  if (streamingBackend === "selkies") {
+    if (!humanToken) {
+      setConnection("", "Connecting");
+      setFeedStatus("Authenticating", "Enter the VNC password to continue");
+      if (!credentialsDialog.open) credentialsDialog.showModal();
+      passwordInput.focus();
+      return;
+    }
+    connectSelkies();
+    return;
+  }
+  connectVnc();
+}
+
+function setConnection(state, label) {
+  connectionDot.className = `status-dot ${state}`;
+  connectionLabel.textContent = label;
+  const chip = document.querySelector("#connection-chip");
+  if (chip) chip.setAttribute("aria-label", `Connection: ${label}`);
+}
+
+function setFeedStatus(label, sub = "") {
+  if (feedPlaceholderLabel) feedPlaceholderLabel.textContent = label;
+  if (feedPlaceholderSub) feedPlaceholderSub.textContent = sub;
+}
+
 credentialsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const password = passwordInput.value;
-  if (!password || !rfb) return;
+  if (!password) return;
   humanToken = password;
   passwordInput.removeAttribute("aria-invalid");
-  rfb.sendCredentials({ password });
   passwordInput.value = "";
   credentialsDialog.close();
+  if (streamingBackend === "selkies") {
+    connectSelkies();
+  } else if (rfb) {
+    rfb.sendCredentials({ password });
+  } else {
+    connect();
+  }
   refreshAgentHealth();
   loadAgentHistory();
 });
@@ -509,9 +571,8 @@ discardRecording?.addEventListener("click", () => recordingAction("/api/v1/recor
 disconnectButton?.addEventListener("click", () => {
   humanToken = "";
   closeDrawers();
-  if (rfb) {
-    try { rfb.disconnect(); } catch { /* already disconnected */ }
-  }
+  disconnectStream();
+  hasConnected = false;
   credentialsDialog.showModal();
   announcer.textContent = "Disconnected from the desktop";
 });

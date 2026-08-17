@@ -14,9 +14,9 @@ if ! python3 -c "import selkies" 2>/dev/null; then
 fi
 
 PORT="${SELKIES_PORT:-8082}"
-MODE="${SELKIES_MODE:-webrtc}"
+MODE="${SELKIES_MODE:-websockets}"
 
 exec python3 -m selkies \
-  --http-port "$PORT" \
-  --mode "$MODE" \
-  --display "${DISPLAY:-:0}"
+  --addr 127.0.0.1 \
+  --port "$PORT" \
+  --mode "$MODE"

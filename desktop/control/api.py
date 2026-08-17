@@ -271,16 +271,6 @@ class ControlApplication:
                 201, self.broker.request({"action": "approve", "plan": body.get("plan")})
             )
 
-        if not self._authorized(headers):
-            return self._unauthorized()
-
-        if path.startswith("/api/v1/control/agent/"):
-            return json_response(200, self._agent_control(path.rsplit("/", 1)[-1], body))
-        if path == "/api/v1/input":
-            agent_id = self._identifier(body.get("agentId"), "agentId")
-            self.input.apply(agent_id, body.get("actions"))
-            self.metrics.inc("relay_input_batches_total")
-            return Response(204)
         if path == "/api/v1/recording/start":
             if not self._operator_request(headers):
                 return self._unauthorized()
@@ -302,6 +292,17 @@ class ControlApplication:
             self.metrics.inc("relay_recording_actions_total")
             self._emit("recording.discarded", "Screen recording discarded", result)
             return json_response(200, result)
+
+        if not self._authorized(headers):
+            return self._unauthorized()
+
+        if path.startswith("/api/v1/control/agent/"):
+            return json_response(200, self._agent_control(path.rsplit("/", 1)[-1], body))
+        if path == "/api/v1/input":
+            agent_id = self._identifier(body.get("agentId"), "agentId")
+            self.input.apply(agent_id, body.get("actions"))
+            self.metrics.inc("relay_input_batches_total")
+            return Response(204)
         if path == "/api/v1/terminals":
             name = self._identifier(body.get("name"), "name")
             cwd = body.get("cwd")

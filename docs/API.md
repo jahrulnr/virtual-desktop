@@ -184,7 +184,8 @@ The default browser canvas uses noVNC over websockify. Set `RELAY_STREAMING=selk
 in the container environment to prefer Selkies WebRTC instead. Build with
 `INSTALL_SELKIES=true` to include the optional Selkies package. When Selkies is
 active, health reports `"streaming":{"backend":"selkies","selkiesPath":"/selkies/"}` and
-nginx proxies `/selkies/` to the local Selkies listener.
+nginx proxies `/selkies/` to the local Selkies listener. The web shell embeds that
+path when the backend is Selkies; default builds keep noVNC over websockify.
 
 ## Errors
 

@@ -6,9 +6,9 @@ Coddy with a Go MCP computer server.
 
 ## Layout
 
-- `desktop/control/` — control API, leases, validated input (`xdotool`)
+- `desktop/control/` — control API, leases, validated input (`xdotool`), recording, tmux bridge, metrics/SSE
 - `desktop/broker/` — guarded APT / `.deb` install approvals
-- `computer-mcp/` — Go MCP `computer` + `ui_inspect` tools
+- `computer-mcp/` — Go MCP `computer`, `ui_inspect`, `record_screen`, and `terminal` tools
 - `web/` — browser shell (noVNC embed, Coddy panel, handoff UI)
 - `agent/` — pinned Coddy config and `os-operator` skill
 - `tests/` — Python unit tests, static invariants, container smoke
@@ -36,10 +36,11 @@ Manual handoff checklist: `docs/TESTING.md`.
 ## Operating loop for agents
 
 1. `GET /api/v1/accessibility` or MCP `ui_inspect` for structure.
-2. `runtime_status` MCP tool or `GET /api/v1/health` for lease and uptime.
+2. `runtime_status` MCP tool or `GET /api/v1/health` for lease, uptime, recording, and streaming backend.
 3. Screenshot when canvas / Electron surfaces lack AT-SPI detail.
 4. `claim` agent lease, small action batch, observe again.
 5. `heartbeat` every ~8s during long turns; `release` when handing back.
-6. `GET /api/v1/events` for recent handoff and control activity when debugging.
+6. `GET /api/v1/events` or `/api/v1/events/stream` for handoff and control activity when debugging.
+7. Use MCP `terminal` for bounded tmux shell work; use `record_screen` only after human confirmation.
 
 Coordinates are always framebuffer pixels (default 1440×900), not browser scale.

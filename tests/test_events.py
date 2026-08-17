@@ -27,6 +27,15 @@ class EventLogTests(unittest.TestCase):
 
         self.assertEqual([event["title"] for event in events], ["second", "third"])
 
+    def test_subscribe_replays_backlog_and_live_events(self):
+        log = EventLog()
+        log.emit("one", "first")
+        iterator = log.subscribe()
+        self.assertEqual(next(iterator)["kind"], "one")
+        log.emit("two", "second")
+        self.assertEqual(next(iterator)["kind"], "two")
+        iterator.close()
+
 
 if __name__ == "__main__":
     unittest.main()

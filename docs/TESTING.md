@@ -16,13 +16,14 @@ The default local VNC password is `testtest`; the matching operator fixture is
 loopback community setup.
 
 Unit tests cover lease expiration/preemption, validated input translation, API
-authentication/error contracts, bounded accessibility serialization, exact package
-approvals, expiry/single-use behavior, path confinement, and `.deb` replacement.
+authentication/error contracts, recording and terminal routes, Prometheus metrics,
+SSE event streams, bounded accessibility serialization, exact package approvals,
+expiry/single-use behavior, path confinement, and `.deb` replacement.
 Static checks compile Python, parse Compose, syntax-check shell, require loopback
 binding and expected response headers, reject dangerous host integration, and forbid
-`--no-sandbox`. The live smoke test checks health, actual X pointer movement, human
-preemption and 409 rejection, a 1440x900 screenshot, AT-SPI output, and expected
-response headers.
+`--no-sandbox`. The live smoke test checks health, metrics, recording/streaming
+fields, actual X pointer movement, human preemption and 409 rejection, a 1440x900
+screenshot, AT-SPI output, and expected response headers.
 
 Go tests additionally cover Relay response validation, smooth-move generation,
 the full computer action inventory, MCP image blocks, stateless reconnects, and

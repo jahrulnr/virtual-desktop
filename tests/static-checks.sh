@@ -75,6 +75,8 @@ rg -q 'location /selkies/' desktop/config/nginx.conf
 rg -q 'id="start-recording"' web/index.html
 rg -q 'id="activity-log"' web/index.html
 rg -q 'EventSource\("/api/v1/events/stream"\)' web/app.js
+rg -q '--addr 127.0.0.1' desktop/scripts/start-selkies.sh
+rg -q 'connectSelkies' web/app.js
 if rg -n 'TODO|\[TODO' desktop/home/.agents/skills/os-operator; then
   echo "unfinished OS operator skill scaffold found" >&2
   exit 1

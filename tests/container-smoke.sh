@@ -94,6 +94,10 @@ docker compose exec -T --user desktop desktop sh -c \
 curl -fsS -H "$relay_auth" "$relay_base/api/v1/accessibility" \
   | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["role"] == "desktop frame"'
 
+curl -fsS "$relay_base/metrics" | rg -q 'relay_info'
+curl -fsS "$relay_base/api/v1/health" \
+  | python3 -c 'import json,sys; data=json.load(sys.stdin); assert "recording" in data and "streaming" in data'
+
 curl -fsSI "$relay_base/" | rg -qi '^Content-Security-Policy:'
 
 echo "Container smoke checks passed"
