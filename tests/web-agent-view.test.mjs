@@ -7,6 +7,7 @@ import {
   normalizeHistory,
   parseMarkdown,
   parseSSEText,
+  renderMarkdown,
   toolDisplay,
 } from "../web/agent-view.mjs";
 
@@ -31,6 +32,10 @@ test("Markdown is parsed into safe structural nodes without executable HTML", ()
   assert.equal(JSON.stringify(blocks).includes('"href":"javascript:'), false);
   assert.equal(blocks.at(-1).type, "paragraph");
   assert.equal(blocks.at(-1).children[0].text, "<img src=x onerror=alert(1)>");
+});
+
+test("renderMarkdown is exported for the browser shell", () => {
+  assert.equal(typeof renderMarkdown, "function");
 });
 
 test("persisted Coddy history skips empty assistant shells and reconstructs tool calls", () => {

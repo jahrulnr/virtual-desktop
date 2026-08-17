@@ -2,7 +2,7 @@ import RFB from "/novnc/core/rfb.js";
 import {
   applyAgentEvent,
   normalizeHistory,
-  parseMarkdown,
+  renderMarkdown,
 } from "/agent-view.mjs";
 
 const screen = document.querySelector("#desktop-screen");
@@ -46,6 +46,7 @@ const MAX_STREAM_BYTES = 8 * 1024 * 1024;
 const MAX_EVENT_CHARS = 256 * 1024;
 const MAX_ASSISTANT_CHARS = 256 * 1024;
 const MAX_TRANSCRIPT_ITEMS = 200;
+const displayMeta = document.querySelector("#display-meta");
 const sessionId = crypto.randomUUID();
 const storedAgentSession = localStorage.getItem("relay.coddy.session");
 const agentSessionId = /^sess_[0-9a-f]{16,64}$/.test(storedAgentSession || "")
@@ -144,20 +145,33 @@ function renderLease(state) {
 
   if (isOurs) {
     leaseOwner.textContent = "You";
-    leaseDetail.textContent = "Keyboard and pointer are live";
+    leaseDetail.textContent = leaseDetailText(state, "Keyboard and pointer are live");
     operatorLabel.textContent = "Human control active";
   } else if (state.owner === "agent") {
     leaseOwner.textContent = "AI operator";
-    leaseDetail.textContent = "Watching the agent work";
+    leaseDetail.textContent = leaseDetailText(state, "Watching the agent work");
     operatorLabel.textContent = "AI is operating";
   } else if (state.owner === "human") {
     leaseOwner.textContent = "Another viewer";
-    leaseDetail.textContent = "This feed is view-only";
+    leaseDetail.textContent = leaseDetailText(state, "This feed is view-only");
     operatorLabel.textContent = "Another viewer has control";
   } else {
     leaseOwner.textContent = "Observer";
-    leaseDetail.textContent = "No input is being sent";
+    leaseDetail.textContent = leaseDetailText(state, "No input is being sent");
     operatorLabel.textContent = "Desktop ready";
+  }
+}
+
+async function refreshDesktopHealth() {
+  try {
+    const health = await api("/api/v1/health", { method: "GET", headers: {} });
+    const width = health?.display?.width;
+    const height = health?.display?.height;
+    if (displayMeta && width && height) {
+      displayMeta.textContent = `${width}×${height} framebuffer`;
+    }
+  } catch {
+    if (displayMeta) displayMeta.textContent = "Framebuffer unknown";
   }
 }
 
@@ -288,54 +302,10 @@ function conciseError(error) {
   return firstLine.length > 180 ? `${firstLine.slice(0, 177)}…` : firstLine;
 }
 
-function appendInline(parent, nodes) {
-  for (const node of nodes) {
-    if (node.type === "text") parent.append(document.createTextNode(node.text));
-    else if (node.type === "break") parent.append(document.createElement("br"));
-    else if (node.type === "code") {
-      const code = document.createElement("code");
-      code.textContent = node.text;
-      parent.append(code);
-    } else if (["strong", "emphasis", "link"].includes(node.type)) {
-      const element = document.createElement(node.type === "emphasis" ? "em" : node.type === "link" ? "a" : "strong");
-      if (node.type === "link") {
-        element.href = node.href;
-        element.target = "_blank";
-        element.rel = "noopener noreferrer";
-      }
-      appendInline(element, node.children);
-      parent.append(element);
-    }
-  }
-}
-
-function renderMarkdown(parent, markdown) {
-  for (const block of parseMarkdown(markdown)) {
-    if (block.type === "code_block") {
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      if (block.language) code.dataset.language = block.language;
-      code.textContent = block.text;
-      pre.append(code);
-      parent.append(pre);
-      continue;
-    }
-    if (block.type === "list") {
-      const list = document.createElement(block.ordered ? "ol" : "ul");
-      for (const children of block.items) {
-        const item = document.createElement("li");
-        appendInline(item, children);
-        list.append(item);
-      }
-      parent.append(list);
-      continue;
-    }
-    const element = block.type === "heading"
-      ? document.createElement(`h${Math.min(6, block.level + 1)}`)
-      : document.createElement(block.type === "quote" ? "blockquote" : "p");
-    appendInline(element, block.children);
-    parent.append(element);
-  }
+function leaseDetailText(state, base) {
+  const seconds = Math.ceil((state.expiresInMs || 0) / 1000);
+  if (state.owner === "none" || seconds <= 0) return base;
+  return `${base} · lease ${seconds}s`;
 }
 
 function messageLabel(role) {
@@ -680,3 +650,4 @@ setInterval(async () => {
 
 connect();
 refreshLease();
+refreshDesktopHealth();

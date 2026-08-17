@@ -96,3 +96,11 @@ class ControlLease:
                 raise ValidationError("actor must be human or agent")
             if self._owner != actor or self._owner_id != owner_id:
                 raise ConflictError(f"{actor} does not hold the control lease")
+
+    def extend_if_owner(self, actor: str, owner_id: str) -> None:
+        """Renew TTL for the current owner without expiring a still-matching lease."""
+        with self._lock:
+            if self._owner == actor and self._owner_id == owner_id:
+                self._expires_at = self._clock() + self._ttls[actor]
+                return
+            self.assert_owner(actor, owner_id)

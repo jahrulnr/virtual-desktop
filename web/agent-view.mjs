@@ -143,6 +143,59 @@ export function parseMarkdown(markdown) {
   return blocks;
 }
 
+function appendInline(parent, nodes) {
+  for (const node of nodes) {
+    if (node.type === "text") parent.append(document.createTextNode(node.text));
+    else if (node.type === "break") parent.append(document.createElement("br"));
+    else if (node.type === "code") {
+      const code = document.createElement("code");
+      code.textContent = node.text;
+      parent.append(code);
+    } else if (["strong", "emphasis", "link"].includes(node.type)) {
+      const element = document.createElement(
+        node.type === "emphasis" ? "em" : node.type === "link" ? "a" : "strong",
+      );
+      if (node.type === "link") {
+        element.href = node.href;
+        element.target = "_blank";
+        element.rel = "noopener noreferrer";
+      }
+      appendInline(element, node.children);
+      parent.append(element);
+    }
+  }
+}
+
+export function renderMarkdown(parent, markdown) {
+  for (const block of parseMarkdown(markdown)) {
+    if (block.type === "code_block") {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      if (block.language) code.dataset.language = block.language;
+      code.textContent = block.text;
+      pre.append(code);
+      parent.append(pre);
+      continue;
+    }
+    if (block.type === "list") {
+      const list = document.createElement(block.ordered ? "ol" : "ul");
+      for (const children of block.items) {
+        const item = document.createElement("li");
+        appendInline(item, children);
+        list.append(item);
+      }
+      parent.append(list);
+      continue;
+    }
+    const element =
+      block.type === "heading"
+        ? document.createElement(`h${Math.min(6, block.level + 1)}`)
+        : document.createElement(block.type === "quote" ? "blockquote" : "p");
+    appendInline(element, block.children);
+    parent.append(element);
+  }
+}
+
 function parseArguments(raw) {
   if (raw && typeof raw === "object") return raw;
   if (typeof raw !== "string" || !raw.trim()) return {};
