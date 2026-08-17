@@ -116,12 +116,28 @@ function setDrawerScrim(visible) {
   drawerScrim.hidden = !visible;
 }
 
-function closeDrawers() {
+function closeControlDrawer() {
   drawer.hidden = true;
-  agentDrawer.hidden = true;
   openTools.setAttribute("aria-expanded", "false");
-  openAgent.setAttribute("aria-expanded", "false");
   setDrawerScrim(false);
+}
+
+function closeDrawers() {
+  closeControlDrawer();
+}
+
+function isAgentOpen() {
+  return document.body.dataset.agentOpen !== "false";
+}
+
+function toggleAgent(open, { focus = true } = {}) {
+  const next = Boolean(open);
+  document.body.dataset.agentOpen = String(next);
+  localStorage.setItem("relay.agent.panel", next ? "open" : "closed");
+  openAgent.setAttribute("aria-expanded", String(next));
+  if (!focus) return;
+  if (next) agentPrompt.focus();
+  else openAgent.focus();
 }
 
 function syncModeBanner(state, isOurs) {
@@ -397,7 +413,7 @@ renewLease?.addEventListener("click", async () => {
 
 openTools.addEventListener("click", () => {
   const open = drawer.hidden;
-  closeDrawers();
+  closeControlDrawer();
   drawer.hidden = !open;
   openTools.setAttribute("aria-expanded", String(open));
   if (open) {
@@ -407,25 +423,13 @@ openTools.addEventListener("click", () => {
 });
 
 closeTools.addEventListener("click", () => {
-  closeDrawers();
+  closeControlDrawer();
   openTools.focus();
 });
 
-function toggleAgent(open) {
-  closeDrawers();
-  agentDrawer.hidden = !open;
-  openAgent.setAttribute("aria-expanded", String(open));
-  if (open) {
-    setDrawerScrim(true);
-    agentPrompt.focus();
-  } else {
-    openAgent.focus();
-  }
-}
-
-openAgent.addEventListener("click", () => toggleAgent(agentDrawer.hidden));
+openAgent.addEventListener("click", () => toggleAgent(!isAgentOpen()));
 closeAgent.addEventListener("click", () => toggleAgent(false));
-drawerScrim?.addEventListener("click", closeDrawers);
+drawerScrim?.addEventListener("click", closeControlDrawer);
 openShortcuts?.addEventListener("click", () => shortcutsDialog?.showModal());
 
 async function claimHumanControl() {
@@ -440,8 +444,8 @@ async function releaseHumanControl() {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    if (!drawer.hidden || !agentDrawer.hidden) {
-      closeDrawers();
+    if (!drawer.hidden) {
+      closeControlDrawer();
       openTools.focus();
       return;
     }
@@ -458,7 +462,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (modKey(event) && event.key === ".") {
     event.preventDefault();
-    toggleAgent(agentDrawer.hidden);
+    toggleAgent(!isAgentOpen());
     return;
   }
   if (modKey(event) && event.key === ",") {
@@ -977,3 +981,4 @@ refreshLease();
 refreshDesktopHealth();
 updateSessionMeta();
 updatePageTitle("none");
+toggleAgent(localStorage.getItem("relay.agent.panel") !== "closed", { focus: false });

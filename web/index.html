@@ -7,8 +7,9 @@
     <title>Cloud Agent · Relay Desktop</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body data-owner="none">
+  <body data-owner="none" data-agent-open="true">
     <a class="skip-link" href="#desktop-screen">Skip to desktop</a>
+    <div class="relay-shell">
     <main class="relay-stage" id="relay-stage">
       <div
         id="desktop-screen"
@@ -65,8 +66,8 @@
             id="open-agent"
             type="button"
             aria-controls="agent-drawer"
-            aria-expanded="false"
-            aria-label="Open Coddy operator"
+            aria-expanded="true"
+            aria-label="Show or hide Coddy operator"
             aria-keyshortcuts="Control+Period Meta+Period"
           >
             <span class="agent-glyph" aria-hidden="true">C</span>
@@ -113,58 +114,6 @@
       </button>
 
       <div class="drawer-scrim" id="drawer-scrim" hidden></div>
-
-      <aside
-        class="agent-drawer"
-        id="agent-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-drawer-title"
-        hidden
-      >
-        <header class="agent-heading">
-          <div class="agent-identity">
-            <span class="agent-glyph agent-glyph-large" aria-hidden="true">C</span>
-            <div>
-              <p class="eyebrow">Desktop operator</p>
-              <h1 id="agent-drawer-title">Coddy Agent</h1>
-            </div>
-          </div>
-          <button class="drawer-close" id="close-agent" type="button" aria-label="Close Coddy operator">×</button>
-        </header>
-
-        <div class="agent-status" id="agent-status" role="status">
-          <span class="agent-status-line" aria-hidden="true"></span>
-          <span id="agent-status-label">Ready for an outcome</span>
-        </div>
-
-        <div class="agent-transcript" id="agent-transcript" aria-live="polite" aria-label="Agent activity">
-          <div class="agent-empty" id="agent-empty">
-            <span class="agent-empty-mark" aria-hidden="true">↳</span>
-            <p>Tell Coddy what should be true on the desktop. It will inspect, act, and verify in the same session you can take over.</p>
-          </div>
-        </div>
-
-        <div class="permission-card" id="permission-card" hidden>
-          <p class="eyebrow">Confirmation required</p>
-          <strong id="permission-title">Coddy wants to run a protected action</strong>
-          <pre id="permission-detail"></pre>
-          <div class="permission-actions">
-            <button id="permission-reject" type="button">Reject</button>
-            <button id="permission-allow" type="button" aria-describedby="permission-detail">Allow once</button>
-          </div>
-        </div>
-
-        <form class="agent-composer" id="agent-form">
-          <label class="visually-hidden" for="agent-prompt">Task for Coddy</label>
-          <textarea id="agent-prompt" rows="3" maxlength="12000" placeholder="Open Chromium and fill the demo form…" required></textarea>
-          <div class="composer-footer">
-            <span>Enter to send · <kbd>⌘.</kbd> agent · <kbd>?</kbd> shortcuts</span>
-            <button class="agent-stop" id="agent-stop" type="button" hidden>Stop</button>
-            <button class="agent-send" id="agent-send" type="submit">Run task</button>
-          </div>
-        </form>
-      </aside>
 
       <aside
         class="control-drawer"
@@ -237,6 +186,57 @@
       </aside>
     </main>
 
+    <aside
+      class="agent-drawer"
+      id="agent-drawer"
+      role="complementary"
+      aria-labelledby="agent-drawer-title"
+    >
+      <header class="agent-heading">
+        <div class="agent-identity">
+          <span class="agent-glyph agent-glyph-large" aria-hidden="true">C</span>
+          <div>
+            <p class="eyebrow">Desktop operator</p>
+            <h1 id="agent-drawer-title">Coddy Agent</h1>
+          </div>
+        </div>
+        <button class="drawer-close" id="close-agent" type="button" aria-label="Hide Coddy operator">×</button>
+      </header>
+
+      <div class="agent-status" id="agent-status" role="status">
+        <span class="agent-status-line" aria-hidden="true"></span>
+        <span id="agent-status-label">Ready for an outcome</span>
+      </div>
+
+      <div class="agent-transcript" id="agent-transcript" aria-live="polite" aria-label="Agent activity">
+        <div class="agent-empty" id="agent-empty">
+          <span class="agent-empty-mark" aria-hidden="true">↳</span>
+          <p>Tell Coddy what should be true on the desktop. It will inspect, act, and verify in the same session you can take over.</p>
+        </div>
+      </div>
+
+      <div class="permission-card" id="permission-card" hidden>
+        <p class="eyebrow">Confirmation required</p>
+        <strong id="permission-title">Coddy wants to run a protected action</strong>
+        <pre id="permission-detail"></pre>
+        <div class="permission-actions">
+          <button id="permission-reject" type="button">Reject</button>
+          <button id="permission-allow" type="button" aria-describedby="permission-detail">Allow once</button>
+        </div>
+      </div>
+
+      <form class="agent-composer" id="agent-form">
+        <label class="visually-hidden" for="agent-prompt">Task for Coddy</label>
+        <textarea id="agent-prompt" rows="3" maxlength="12000" placeholder="Open Chromium and fill the demo form…" required></textarea>
+        <div class="composer-footer">
+          <span>Enter to send · <kbd>⌘.</kbd> panel · <kbd>?</kbd> shortcuts</span>
+          <button class="agent-stop" id="agent-stop" type="button" hidden>Stop</button>
+          <button class="agent-send" id="agent-send" type="submit">Run task</button>
+        </div>
+      </form>
+    </aside>
+    </div>
+
     <dialog id="credentials-dialog" class="credentials-dialog">
       <form id="credentials-form" method="dialog">
         <span class="relay-cube dialog-mark" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -255,7 +255,7 @@
         <dl class="shortcut-list">
           <div><dt><kbd>T</kbd></dt><dd>Take control</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Release control</dd></div>
-          <div><dt><kbd>Ctrl</kbd>+<kbd>.</kbd></dt><dd>Toggle agent panel</dd></div>
+          <div><dt><kbd>Ctrl</kbd>+<kbd>.</kbd></dt><dd>Show or hide agent column</dd></div>
           <div><dt><kbd>Ctrl</kbd>+<kbd>,</kbd></dt><dd>Toggle desktop controls</dd></div>
           <div><dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></dt><dd>Fullscreen</dd></div>
           <div><dt><kbd>Esc</kbd></dt><dd>Close open panel</dd></div>

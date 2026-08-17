@@ -48,6 +48,7 @@ rg -q 'class="control-pill take-control"' web/index.html
 rg -q 'class="observer-shield"' web/index.html
 rg -q 'aria-controls="control-drawer"' web/index.html
 rg -q 'aria-controls="agent-drawer"' web/index.html
+rg -q 'data-agent-open' web/index.html web/app.js web/styles.css
 rg -q 'X-Human-Control-Token' desktop/control/agent_gateway.py
 rg -q 'relay__computer' agent/skills/os-operator/SKILL.md
 rg -q '2ba0ec9cc531e31954c2565b2984d92d4bc890d3' compose.yaml Dockerfile
