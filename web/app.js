@@ -47,9 +47,25 @@ const MAX_EVENT_CHARS = 256 * 1024;
 const MAX_ASSISTANT_CHARS = 256 * 1024;
 const MAX_TRANSCRIPT_ITEMS = 200;
 const displayMeta = document.querySelector("#display-meta");
+const sessionMeta = document.querySelector("#session-meta");
+const modeBanner = document.querySelector("#mode-banner");
+const modeBannerLabel = document.querySelector("#mode-banner-label");
+const leaseCountdown = document.querySelector("#lease-countdown");
+const agentCanvasBadge = document.querySelector("#agent-canvas-badge");
+const leaseWarning = document.querySelector("#lease-warning");
+const renewLease = document.querySelector("#renew-lease");
+const drawerScrim = document.querySelector("#drawer-scrim");
+const feedPlaceholderLabel = document.querySelector("#feed-placeholder-label");
+const feedPlaceholderSub = document.querySelector("#feed-placeholder-sub");
+const openShortcuts = document.querySelector("#open-shortcuts");
+const shortcutsDialog = document.querySelector("#shortcuts-dialog");
+const fullscreenLabel = document.querySelector("#fullscreen-label");
+const newAgentSession = document.querySelector("#new-agent-session");
+const copySessionId = document.querySelector("#copy-session-id");
+const disconnectButton = document.querySelector("#disconnect");
 const sessionId = crypto.randomUUID();
 const storedAgentSession = localStorage.getItem("relay.coddy.session");
-const agentSessionId = /^sess_[0-9a-f]{16,64}$/.test(storedAgentSession || "")
+let agentSessionId = /^sess_[0-9a-f]{16,64}$/.test(storedAgentSession || "")
   ? storedAgentSession
   : `sess_${crypto.randomUUID().replaceAll("-", "")}`;
 localStorage.setItem("relay.coddy.session", agentSessionId);
@@ -63,6 +79,74 @@ let agentHistoryLoaded = false;
 let transcriptItems = [];
 const permissionQueue = [];
 
+function modKey(event) {
+  return event.metaKey || event.ctrlKey;
+}
+
+function isTypingContext(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function updateSessionMeta() {
+  if (sessionMeta) {
+    sessionMeta.textContent = `${agentSessionId.slice(0, 18)}…`;
+    sessionMeta.title = agentSessionId;
+  }
+}
+
+function updatePageTitle(owner) {
+  const suffix = ({
+    "human-self": "You have control",
+    agent: "Agent operating",
+    human: "Another viewer",
+    none: "Observer",
+  })[owner] || "Observer";
+  document.title = `Cloud Agent · ${suffix}`;
+}
+
+function setDrawerScrim(visible) {
+  if (!drawerScrim) return;
+  drawerScrim.hidden = !visible;
+}
+
+function closeDrawers() {
+  drawer.hidden = true;
+  agentDrawer.hidden = true;
+  openTools.setAttribute("aria-expanded", "false");
+  openAgent.setAttribute("aria-expanded", "false");
+  setDrawerScrim(false);
+}
+
+function syncModeBanner(state, isOurs) {
+  const owner = isOurs ? "human-self" : state.owner;
+  const labels = {
+    "human-self": "You have control",
+    agent: "Agent is operating",
+    human: "Another viewer has control",
+    none: "Observer mode",
+  };
+  if (modeBannerLabel) modeBannerLabel.textContent = labels[owner] || labels.none;
+  const seconds = Math.ceil((state.expiresInMs || 0) / 1000);
+  if (leaseCountdown) {
+    if (state.owner === "none" || seconds <= 0) {
+      leaseCountdown.hidden = true;
+      leaseCountdown.textContent = "";
+    } else {
+      leaseCountdown.hidden = false;
+      leaseCountdown.textContent = `${seconds}s`;
+    }
+  }
+  if (agentCanvasBadge) agentCanvasBadge.hidden = state.owner !== "agent";
+  updatePageTitle(owner);
+}
+
+function setLeaseWarning(state, isOurs) {
+  if (!leaseWarning) return;
+  const show = isOurs && (state.expiresInMs || 0) > 0 && (state.expiresInMs || 0) < 12_000;
+  leaseWarning.hidden = !show;
+}
+
 function websocketUrl() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${location.host}/websockify`;
@@ -71,6 +155,13 @@ function websocketUrl() {
 function setConnection(state, label) {
   connectionDot.className = `status-dot ${state}`;
   connectionLabel.textContent = label;
+  const chip = document.querySelector("#connection-chip");
+  if (chip) chip.setAttribute("aria-label", `Connection: ${label}`);
+}
+
+function setFeedStatus(label, sub = "") {
+  if (feedPlaceholderLabel) feedPlaceholderLabel.textContent = label;
+  if (feedPlaceholderSub) feedPlaceholderSub.textContent = sub;
 }
 
 function connect() {
@@ -79,6 +170,7 @@ function connect() {
     try { rfb.disconnect(); } catch { /* The transport is already gone. */ }
   }
   setConnection("", "Connecting");
+  setFeedStatus("Connecting to desktop", "Opening WebSocket to VNC bridge");
   rfb = new RFB(screen, websocketUrl(), { shared: true });
   rfb.scaleViewport = true;
   rfb.resizeSession = false;
@@ -93,6 +185,7 @@ function connect() {
     announcer.textContent = "Remote desktop connected";
   });
   rfb.addEventListener("credentialsrequired", () => {
+    setFeedStatus("Authenticating", "Enter the VNC password to continue");
     if (!credentialsDialog.open) credentialsDialog.showModal();
     passwordInput.focus();
   });
@@ -100,6 +193,7 @@ function connect() {
     setConnection("failed", "Password rejected");
     humanToken = "";
     passwordInput.value = "";
+    passwordInput.setAttribute("aria-invalid", "true");
     if (!credentialsDialog.open) credentialsDialog.showModal();
   });
   rfb.addEventListener("disconnect", (event) => {
@@ -114,6 +208,7 @@ credentialsForm.addEventListener("submit", (event) => {
   const password = passwordInput.value;
   if (!password || !rfb) return;
   humanToken = password;
+  passwordInput.removeAttribute("aria-invalid");
   rfb.sendCredentials({ password });
   passwordInput.value = "";
   credentialsDialog.close();
@@ -138,27 +233,32 @@ async function api(path, options = {}) {
 
 function renderLease(state) {
   const isOurs = state.owner === "human" && state.ownerId === sessionId;
-  document.body.dataset.owner = isOurs ? "human-self" : state.owner;
+  const owner = isOurs ? "human-self" : state.owner;
+  document.body.dataset.owner = owner;
   takeControl.disabled = isOurs;
   releaseControl.disabled = !isOurs;
+  takeControl.setAttribute("aria-pressed", String(isOurs));
+  releaseControl.setAttribute("aria-pressed", String(isOurs));
   if (rfb) rfb.viewOnly = !isOurs;
+  syncModeBanner(state, isOurs);
+  setLeaseWarning(state, isOurs);
 
   if (isOurs) {
     leaseOwner.textContent = "You";
     leaseDetail.textContent = leaseDetailText(state, "Keyboard and pointer are live");
-    operatorLabel.textContent = "Human control active";
+    operatorLabel.textContent = "You have control";
   } else if (state.owner === "agent") {
     leaseOwner.textContent = "AI operator";
     leaseDetail.textContent = leaseDetailText(state, "Watching the agent work");
-    operatorLabel.textContent = "AI is operating";
+    operatorLabel.textContent = "Agent operating";
   } else if (state.owner === "human") {
     leaseOwner.textContent = "Another viewer";
     leaseDetail.textContent = leaseDetailText(state, "This feed is view-only");
-    operatorLabel.textContent = "Another viewer has control";
+    operatorLabel.textContent = "Another viewer";
   } else {
     leaseOwner.textContent = "Observer";
     leaseDetail.textContent = leaseDetailText(state, "No input is being sent");
-    operatorLabel.textContent = "Desktop ready";
+    operatorLabel.textContent = "Observer mode";
   }
 }
 
@@ -184,6 +284,7 @@ async function refreshLease() {
 }
 
 takeControl.addEventListener("click", async () => {
+  takeControl.dataset.loading = "true";
   try {
     const state = await api("/api/v1/control/human/claim", {
       method: "POST",
@@ -195,6 +296,8 @@ takeControl.addEventListener("click", async () => {
     announcer.textContent = "You now control the remote desktop";
   } catch (error) {
     announcer.textContent = error.message;
+  } finally {
+    takeControl.dataset.loading = "false";
   }
 });
 
@@ -206,34 +309,48 @@ releaseControl.addEventListener("click", async () => {
       body: JSON.stringify({ sessionId }),
     });
     renderLease(state);
-    announcer.textContent = "Control returned to the AI operator";
+    announcer.textContent = "Control returned to observer mode";
+  } catch (error) {
+    announcer.textContent = error.message;
+  }
+});
+
+renewLease?.addEventListener("click", async () => {
+  try {
+    const state = await api("/api/v1/control/human/heartbeat", {
+      method: "POST",
+      human: true,
+      body: JSON.stringify({ sessionId }),
+    });
+    renderLease(state);
+    announcer.textContent = "Control lease renewed";
   } catch (error) {
     announcer.textContent = error.message;
   }
 });
 
 openTools.addEventListener("click", () => {
-  drawer.hidden = !drawer.hidden;
-  openTools.setAttribute("aria-expanded", String(!drawer.hidden));
-  if (!drawer.hidden) {
-    agentDrawer.hidden = true;
-    openAgent.setAttribute("aria-expanded", "false");
+  const open = drawer.hidden;
+  closeDrawers();
+  drawer.hidden = !open;
+  openTools.setAttribute("aria-expanded", String(open));
+  if (open) {
+    setDrawerScrim(true);
     closeTools.focus();
   }
 });
 
 closeTools.addEventListener("click", () => {
-  drawer.hidden = true;
-  openTools.setAttribute("aria-expanded", "false");
+  closeDrawers();
   openTools.focus();
 });
 
 function toggleAgent(open) {
+  closeDrawers();
   agentDrawer.hidden = !open;
   openAgent.setAttribute("aria-expanded", String(open));
   if (open) {
-    drawer.hidden = true;
-    openTools.setAttribute("aria-expanded", "false");
+    setDrawerScrim(true);
     agentPrompt.focus();
   } else {
     openAgent.focus();
@@ -242,14 +359,76 @@ function toggleAgent(open) {
 
 openAgent.addEventListener("click", () => toggleAgent(agentDrawer.hidden));
 closeAgent.addEventListener("click", () => toggleAgent(false));
+drawerScrim?.addEventListener("click", closeDrawers);
+openShortcuts?.addEventListener("click", () => shortcutsDialog?.showModal());
+
+async function claimHumanControl() {
+  if (document.body.dataset.owner === "human-self") return;
+  takeControl.click();
+}
+
+async function releaseHumanControl() {
+  if (document.body.dataset.owner !== "human-self") return;
+  releaseControl.click();
+}
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !drawer.hidden) {
-    drawer.hidden = true;
-    openTools.setAttribute("aria-expanded", "false");
-    openTools.focus();
-  } else if (event.key === "Escape" && !agentDrawer.hidden) {
-    toggleAgent(false);
+  if (event.key === "Escape") {
+    if (!drawer.hidden || !agentDrawer.hidden) {
+      closeDrawers();
+      openTools.focus();
+      return;
+    }
+    if (shortcutsDialog?.open) {
+      shortcutsDialog.close();
+      return;
+    }
+  }
+  if (isTypingContext(event.target)) return;
+  if (event.key === "?" && !modKey(event)) {
+    event.preventDefault();
+    shortcutsDialog?.showModal();
+    return;
+  }
+  if (modKey(event) && event.key === ".") {
+    event.preventDefault();
+    toggleAgent(agentDrawer.hidden);
+    return;
+  }
+  if (modKey(event) && event.key === ",") {
+    event.preventDefault();
+    openTools.click();
+    return;
+  }
+  if (modKey(event) && event.shiftKey && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    document.querySelector("#fullscreen")?.click();
+    return;
+  }
+  if (modKey(event) && event.shiftKey && event.key === "Enter") {
+    event.preventDefault();
+    releaseHumanControl();
+    return;
+  }
+  if (modKey(event) && event.key === "Enter") {
+    event.preventDefault();
+    claimHumanControl();
+    return;
+  }
+  if (!modKey(event) && !event.altKey && event.key.toLowerCase() === "t") {
+    event.preventDefault();
+    claimHumanControl();
+    return;
+  }
+  if (!modKey(event) && !event.altKey && event.key.toLowerCase() === "r") {
+    event.preventDefault();
+    releaseHumanControl();
+  }
+});
+
+document.addEventListener("fullscreenchange", () => {
+  if (fullscreenLabel) {
+    fullscreenLabel.textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
   }
 });
 
@@ -259,6 +438,49 @@ document.querySelector("#fullscreen").addEventListener("click", async () => {
 });
 
 document.querySelector("#reconnect").addEventListener("click", connect);
+
+function resetAgentConversation() {
+  agentSessionId = `sess_${crypto.randomUUID().replaceAll("-", "")}`;
+  localStorage.setItem("relay.coddy.session", agentSessionId);
+  agentHistoryLoaded = false;
+  transcriptItems = [];
+  agentTranscript.replaceChildren();
+  const empty = document.createElement("div");
+  empty.className = "agent-empty";
+  empty.id = "agent-empty";
+  empty.innerHTML = '<span class="agent-empty-mark" aria-hidden="true">↳</span><p>Tell Coddy what should be true on the desktop. It will inspect, act, and verify in the same session you can take over.</p>';
+  agentTranscript.append(empty);
+  permissionCard.hidden = true;
+  pendingPermission = null;
+  permissionQueue.length = 0;
+  updateSessionMeta();
+  setAgentStatus("Ready for a new conversation");
+  announcer.textContent = "Started a new Coddy conversation";
+}
+
+newAgentSession?.addEventListener("click", () => {
+  if (!window.confirm("Start a new Coddy conversation? The current transcript will clear in this browser.")) return;
+  resetAgentConversation();
+});
+
+copySessionId?.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(agentSessionId);
+    announcer.textContent = "Coddy session ID copied";
+  } catch {
+    announcer.textContent = "Could not copy session ID";
+  }
+});
+
+disconnectButton?.addEventListener("click", () => {
+  humanToken = "";
+  closeDrawers();
+  if (rfb) {
+    try { rfb.disconnect(); } catch { /* already disconnected */ }
+  }
+  credentialsDialog.showModal();
+  announcer.textContent = "Disconnected from the desktop";
+});
 
 installKind.addEventListener("change", () => {
   const isDeb = installKind.value === "deb";
@@ -373,6 +595,7 @@ function renderTranscript() {
     const item = document.createElement("article");
     item.className = "agent-message";
     item.dataset.role = entry.role;
+    if (entry.streaming) item.classList.add("agent-message-streaming");
     const label = document.createElement("p");
     label.className = "agent-message-label";
     label.textContent = messageLabel(entry.role);
@@ -423,6 +646,8 @@ async function refreshAgentHealth() {
 
 async function loadAgentHistory() {
   if (agentHistoryLoaded || !humanToken) return;
+  setAgentStatus("Restoring conversation…", "working");
+  agentTranscript.setAttribute("aria-busy", "true");
   try {
     const response = await agentFetch(`/coddy/sessions/${agentSessionId}/messages`, { method: "GET" });
     if (response.status === 404) {
@@ -438,10 +663,13 @@ async function loadAgentHistory() {
     agentHistoryLoaded = true;
   } catch (error) {
     setAgentStatus(conciseError(error), "error");
+  } finally {
+    agentTranscript.removeAttribute("aria-busy");
   }
 }
 
 function showPermission(payload) {
+  toggleAgent(true);
   if (pendingPermission) {
     if (permissionQueue.length >= 20) throw new Error("Too many pending permission requests");
     permissionQueue.push(payload);
@@ -651,3 +879,5 @@ setInterval(async () => {
 connect();
 refreshLease();
 refreshDesktopHealth();
+updateSessionMeta();
+updatePageTitle("none");

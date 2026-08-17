@@ -19,12 +19,16 @@ func (f *fakeRelay) Apply(_ context.Context, _ string, actions []relay.Action) e
 	f.actions = append(f.actions, actions...)
 	return nil
 }
+func (f *fakeRelay) Heartbeat(context.Context, string) error { return nil }
 func (f *fakeRelay) Screenshot(context.Context) ([]byte, error) { return f.png, nil }
 func (f *fakeRelay) Accessibility(context.Context) ([]byte, error) {
 	return []byte(`{"role":"desktop frame"}`), nil
 }
 func (f *fakeRelay) Cursor(context.Context) (relay.CursorPosition, error) { return f.cursor, nil }
 func (f *fakeRelay) Release(context.Context, string) error                { return nil }
+func (f *fakeRelay) ControlState(context.Context) ([]byte, error) {
+	return []byte(`{"status":"ok"}`), nil
+}
 
 func TestSmoothMouseMoveInterpolatesFromRealCursor(t *testing.T) {
 	backend := &fakeRelay{cursor: relay.CursorPosition{X: 0, Y: 0}}

@@ -97,7 +97,20 @@ class ControlAPITests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["display"], {"width": 1440, "height": 900})
+        self.assertIn("uptimeMs", body)
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+
+    def test_events_endpoint_returns_recent_activity(self):
+        self.request(
+            "POST",
+            "/api/v1/control/agent/claim",
+            {"agentId": "agent-events"},
+            token="test-operator-token",
+        )
+        status, _, body = self.request("GET", "/api/v1/events")
+        self.assertEqual(status, 200)
+        self.assertTrue(body["events"])
+        self.assertEqual(body["events"][-1]["kind"], "control.claimed")
 
     def test_agent_routes_require_bearer_token(self):
         status, _, body = self.request(

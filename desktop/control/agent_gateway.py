@@ -41,6 +41,7 @@ class RoutePolicy:
         ("GET", re.compile(rf"^/coddy/sessions/{SESSION}/composer-stream$")),
         ("POST", re.compile(rf"^/coddy/sessions/{SESSION}/permission$")),
         ("POST", re.compile(rf"^/coddy/sessions/{SESSION}/cancel$")),
+        ("POST", re.compile(r"^/coddy/sessions$")),
     )
     SESSION_PATH = re.compile(rf"^/coddy/sessions/({SESSION})/")
 

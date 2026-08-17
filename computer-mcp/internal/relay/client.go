@@ -74,6 +74,10 @@ func (c *Client) Claim(ctx context.Context, agentID string) error {
 	return c.doJSON(ctx, http.MethodPost, "/api/v1/control/agent/claim", map[string]any{"agentId": agentID}, nil)
 }
 
+func (c *Client) Heartbeat(ctx context.Context, agentID string) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/v1/control/agent/heartbeat", map[string]any{"agentId": agentID}, nil)
+}
+
 func (c *Client) Release(ctx context.Context, agentID string) error {
 	return c.doJSON(ctx, http.MethodPost, "/api/v1/control/agent/release", map[string]any{"agentId": agentID}, nil)
 }
@@ -126,6 +130,18 @@ func (c *Client) Cursor(ctx context.Context) (CursorPosition, error) {
 	var position CursorPosition
 	err := c.doJSON(ctx, http.MethodGet, "/api/v1/cursor", nil, &position)
 	return position, err
+}
+
+func (c *Client) ControlState(ctx context.Context) ([]byte, error) {
+	response, err := c.request(ctx, http.MethodGet, "/api/v1/health", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, body, destination any) error {

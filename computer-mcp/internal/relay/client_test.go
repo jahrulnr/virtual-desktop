@@ -47,6 +47,27 @@ func TestClientClaimsBeforeSendingInput(t *testing.T) {
 	}
 }
 
+func TestClientHeartbeatsAgentLease(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"owner":"agent","ownerId":"coddy-1"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "operator-secret", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Heartbeat(context.Background(), "coddy-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "/api/v1/control/agent/heartbeat" {
+		t.Fatalf("paths = %v", paths)
+	}
+}
+
 func TestClientPreservesHumanControlConflict(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

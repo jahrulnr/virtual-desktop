@@ -18,6 +18,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from .domain import ConflictError, ControlLease, ValidationError
+from .events import EventLog
 from .input_controller import InputController, SubprocessRunner
 
 
@@ -147,6 +148,7 @@ class ControlApplication:
         cursor: CursorSource,
         width: int,
         height: int,
+        events: EventLog | None = None,
     ) -> None:
         if len(token) < 12:
             raise ValueError("operator token must have at least 12 characters")
@@ -162,6 +164,10 @@ class ControlApplication:
         self.cursor = cursor
         self.width = width
         self.height = height
+        self.events = events or EventLog()
+
+    def _emit(self, kind: str, title: str, detail: dict[str, object] | None = None) -> None:
+        self.events.emit(kind, title, detail)
 
     def handle(
         self, method: str, path: str, headers: object, body: object | None
@@ -185,10 +191,13 @@ class ControlApplication:
                 200,
                 {
                     "status": "ok",
+                    "uptimeMs": self.events.uptime_ms(),
                     "display": {"width": self.width, "height": self.height},
                     "control": self.lease.state(),
                 },
             )
+        if method == "GET" and path == "/api/v1/events":
+            return json_response(200, {"events": self.events.list(50)})
         if method == "GET" and path == "/api/v1/control":
             return json_response(200, self.lease.state())
         if method == "GET" and path == "/api/v1/screenshot":
@@ -244,24 +253,37 @@ class ControlApplication:
     def _human_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
         owner_id = self._identifier(body.get("sessionId"), "sessionId")
         if action == "claim":
+            previous = self.lease.state()
             state = self.lease.claim_human(owner_id)
             self.input.preempt()
+            if previous.get("owner") == "agent":
+                self._emit(
+                    "control.preempted",
+                    "Human preempted the agent",
+                    {"previousOwnerId": previous.get("ownerId")},
+                )
+            self._emit("control.claimed", "Human claimed control", {"ownerId": owner_id})
             return state
         if action == "heartbeat":
             return self.lease.heartbeat("human", owner_id)
         if action == "release":
-            return self.lease.release("human", owner_id)
+            state = self.lease.release("human", owner_id)
+            self._emit("control.released", "Human released control", {"ownerId": owner_id})
+            return state
         raise ValidationError("unsupported human control action")
 
     def _agent_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
         owner_id = self._identifier(body.get("agentId"), "agentId")
         if action == "claim":
-            return self.lease.claim_agent(owner_id)
+            state = self.lease.claim_agent(owner_id)
+            self._emit("control.claimed", "Agent claimed control", {"ownerId": owner_id})
+            return state
         if action == "heartbeat":
             return self.lease.heartbeat("agent", owner_id)
         if action == "release":
             state = self.lease.release("agent", owner_id)
             self.input.preempt()
+            self._emit("control.released", "Agent released control", {"ownerId": owner_id})
             return state
         raise ValidationError("unsupported agent control action")
 

@@ -22,7 +22,8 @@ deployment it must travel only over HTTPS.
 
 ## Health and lease
 
-- `GET /api/v1/health` — status, display dimensions, and current lease; public.
+- `GET /api/v1/health` — status, uptime, display dimensions, and current lease; public.
+- `GET /api/v1/events` — recent control and lifecycle events; public.
 - `GET /api/v1/control` — current lease; public.
 - `POST /api/v1/control/agent/{claim|heartbeat|release}` — body
   `{"agentId":"operator-1"}`; bearer token required.

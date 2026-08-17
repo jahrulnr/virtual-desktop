@@ -35,9 +35,11 @@ Manual handoff checklist: `docs/TESTING.md`.
 
 ## Operating loop for agents
 
-1. `GET /api/v1/accessibility` (or MCP `ui_inspect`) for structure.
-2. Screenshot when canvas / Electron surfaces lack AT-SPI detail.
-3. `claim` agent lease, small action batch, observe again.
-4. `heartbeat` every ~8s during long turns; `release` when handing back.
+1. `GET /api/v1/accessibility` or MCP `ui_inspect` for structure.
+2. `runtime_status` MCP tool or `GET /api/v1/health` for lease and uptime.
+3. Screenshot when canvas / Electron surfaces lack AT-SPI detail.
+4. `claim` agent lease, small action batch, observe again.
+5. `heartbeat` every ~8s during long turns; `release` when handing back.
+6. `GET /api/v1/events` for recent handoff and control activity when debugging.
 
 Coordinates are always framebuffer pixels (default 1440×900), not browser scale.

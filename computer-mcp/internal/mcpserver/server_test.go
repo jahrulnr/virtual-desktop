@@ -13,6 +13,7 @@ import (
 type fakeBackend struct{}
 
 func (fakeBackend) Apply(context.Context, string, []relay.Action) error { return nil }
+func (fakeBackend) Heartbeat(context.Context, string) error               { return nil }
 func (fakeBackend) Screenshot(context.Context) ([]byte, error) {
 	return []byte("\x89PNG\r\n\x1a\nimage"), nil
 }
@@ -23,6 +24,9 @@ func (fakeBackend) Cursor(context.Context) (relay.CursorPosition, error) {
 	return relay.CursorPosition{X: 10, Y: 20}, nil
 }
 func (fakeBackend) Release(context.Context, string) error { return nil }
+func (fakeBackend) ControlState(context.Context) ([]byte, error) {
+	return []byte(`{"status":"ok","control":{"owner":"none"}}`), nil
+}
 
 func TestComputerToolReturnsMCPImageContent(t *testing.T) {
 	ctx := context.Background()

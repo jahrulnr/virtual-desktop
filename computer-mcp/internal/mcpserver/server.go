@@ -46,6 +46,18 @@ func New(service *computer.Service) *mcp.Server {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(document)}}}, nil, nil
 	})
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "runtime_status",
+		Description: "Read the current desktop health, display size, control lease, and uptime.",
+		Annotations: &mcp.ToolAnnotations{Title: "Read desktop runtime status", ReadOnlyHint: true, IdempotentHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ inspectInput) (*mcp.CallToolResult, any, error) {
+		document, err := service.RuntimeStatus(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read runtime status: %w", err)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(document)}}}, nil, nil
+	})
+
 	return server
 }
 

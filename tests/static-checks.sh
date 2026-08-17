@@ -57,6 +57,12 @@ rg -q 'body\[data-owner="human-self"\].*release-control' web/styles.css
 rg -q 'body\[data-owner="human-self"\].*observer-shield.*display: none' web/styles.css
 rg -Uq '\.observer-shield \{[^}]*cursor: default;' web/styles.css
 rg -q 'document.body.dataset.owner' web/app.js
+rg -q 'id="mode-banner"' web/index.html
+rg -q 'id="shortcuts-dialog"' web/index.html
+rg -q 'id="new-agent-session"' web/index.html
+rg -q 'id="session-meta"' web/index.html
+rg -q 'runtime_status' computer-mcp/internal/mcpserver/server.go
+rg -q 'GET /api/v1/events' desktop/control/api.py
 if rg -n 'TODO|\[TODO' desktop/home/.agents/skills/os-operator; then
   echo "unfinished OS operator skill scaffold found" >&2
   exit 1

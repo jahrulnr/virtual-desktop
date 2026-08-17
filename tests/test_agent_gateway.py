@@ -19,6 +19,7 @@ class AgentGatewayPolicyTests(unittest.TestCase):
             ("GET", "/coddy/sessions/sess_0123456789abcdef/composer-stream"),
             ("POST", "/coddy/sessions/sess_0123456789abcdef/permission"),
             ("POST", "/coddy/sessions/sess_0123456789abcdef/cancel"),
+            ("POST", "/coddy/sessions"),
         ]
         for method, path in allowed:
             with self.subTest(method=method, path=path):

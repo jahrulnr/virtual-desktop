@@ -19,6 +19,29 @@ body { margin: 0; background: var(--shell); }
 button, input, select, textarea { font: inherit; }
 button, summary, select { cursor: pointer; }
 
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: 12px;
+  z-index: 20;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+.skip-link:focus { top: 12px; }
+
+kbd {
+  padding: 1px 5px;
+  border: 1px solid #4a514b;
+  border-radius: 4px;
+  background: #0d100e;
+  color: #d8ddd7;
+  font: 600 10px/1.4 "DejaVu Sans Mono", monospace;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -122,7 +145,103 @@ summary:focus-visible,
 
 .status-dot.connected { background: var(--signal); box-shadow: 0 0 0 4px rgb(185 221 201 / 0.12); }
 .status-dot.failed { background: var(--danger); box-shadow: 0 0 0 4px rgb(228 131 118 / 0.12); }
+.status-dot:not(.connected):not(.failed) { animation: breathe 1.4s ease-in-out infinite; }
 .operator-pulse { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+
+.mode-banner {
+  position: absolute;
+  z-index: 5;
+  inset: auto auto 20px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 999px;
+  background: rgb(17 19 17 / 0.78);
+  color: #e8e8e3;
+  font: 600 10px/1 "DejaVu Sans Mono", monospace;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  backdrop-filter: blur(18px) saturate(120%);
+}
+.mode-banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.mode-banner-countdown { color: var(--muted); }
+body[data-owner="agent"] .mode-banner { border-color: rgb(230 182 109 / 0.45); }
+body[data-owner="agent"] .mode-banner-dot { background: var(--warning); }
+body[data-owner="human-self"] .mode-banner { border-color: rgb(185 221 201 / 0.45); }
+body[data-owner="human-self"] .mode-banner-dot { background: var(--signal); }
+
+.agent-canvas-badge {
+  position: absolute;
+  z-index: 4;
+  inset: 14px 14px auto;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgb(230 182 109 / 0.35);
+  border-radius: 999px;
+  background: rgb(20 18 12 / 0.82);
+  color: #f0d7b0;
+  font: 600 10px/1.35 "DejaVu Sans Mono", monospace;
+  pointer-events: none;
+}
+body[data-owner="agent"] .agent-canvas-badge { display: flex; }
+
+.lease-warning {
+  position: absolute;
+  z-index: 6;
+  inset: 68px 20px auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgb(230 182 109 / 0.45);
+  border-radius: 12px;
+  background: rgb(34 28 18 / 0.92);
+  color: #f0d7b0;
+  font-size: 11px;
+}
+.lease-warning-action {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgb(230 182 109 / 0.45);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.08);
+  color: inherit;
+  font-weight: 700;
+}
+
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  border: 0;
+  background: rgb(0 0 0 / 0.42);
+  backdrop-filter: blur(2px);
+}
+.drawer-scrim[hidden] { display: none; }
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.control-pill[data-loading="true"] .btn-spinner { display: inline-block; }
+.control-pill[data-loading="true"] { opacity: 0.82; pointer-events: none; }
 
 .icon-button,
 .drawer-close {
@@ -199,7 +318,8 @@ summary:focus-visible,
 body[data-owner="human-self"] .take-control { display: none; }
 body[data-owner="human-self"] .release-control { display: flex; }
 body[data-owner="human-self"] .observer-shield { display: none; }
-body[data-owner="human-self"] .operator-chip { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+body[data-owner="human-self"] .operator-chip { border-color: rgb(185 221 201 / 0.35); }
+body[data-owner="human-self"] .operator-pulse { background: var(--signal); }
 body[data-owner="agent"] .operator-pulse { background: var(--warning); box-shadow: 0 0 0 4px rgb(230 182 109 / 0.12); }
 
 .feed-placeholder {
@@ -210,6 +330,7 @@ body[data-owner="agent"] .operator-pulse { background: var(--warning); box-shado
   font: 500 12px/1.4 "DejaVu Sans Mono", monospace;
 }
 .feed-placeholder p { margin: 0; }
+.feed-placeholder-sub { margin: 0; color: #666c66; font-size: 10px; }
 
 .relay-cube {
   position: relative;
@@ -288,6 +409,7 @@ body[data-owner="agent"] .operator-pulse { background: var(--warning); box-shado
 .agent-message::before { content: ""; position: absolute; top: 8px; left: -3px; width: 5px; height: 5px; border-radius: 50%; background: #727a73; }
 .agent-message[data-role="user"]::before { background: var(--paper); }
 .agent-message[data-role="assistant"]::before { background: var(--signal); box-shadow: 0 0 0 4px rgb(185 221 201 / .08); }
+.agent-message-streaming .agent-message-body::after { content: "▍"; margin-left: 2px; animation: scan 1.2s ease-in-out infinite; }
 .agent-message[data-role="reasoning"]::before { border: 1px solid #7d877f; background: var(--shell); }
 .agent-message[data-role="error"]::before { background: var(--danger); box-shadow: 0 0 0 4px rgb(228 131 118 / .08); }
 .agent-message[data-role="decision"]::before { background: var(--paper); }
@@ -385,6 +507,7 @@ h1 { margin: 4px 0 0; font-size: 24px; letter-spacing: -0.045em; }
 .lease-card span:last-child { color: var(--muted); font-size: 12px; }
 
 .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.drawer-tool-danger { color: var(--danger); border-color: rgb(228 131 118 / 0.35); }
 .drawer-tool,
 .approve-action,
 .dialog-action {
@@ -434,27 +557,47 @@ h1 { margin: 4px 0 0; font-size: 24px; letter-spacing: -0.045em; }
 .credentials-dialog p:not(.eyebrow) { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .credentials-dialog label { display: block; margin: 20px 0 7px; font-size: 12px; font-weight: 650; }
 .dialog-action { width: 100%; margin-top: 12px; background: var(--paper); color: var(--ink); }
+
+.shortcuts-dialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 28px;
+  border: 1px solid #484d46;
+  border-radius: 22px;
+  background: #161916;
+  color: var(--paper);
+}
+.shortcuts-dialog::backdrop { background: rgb(7 8 7 / 0.76); backdrop-filter: blur(12px); }
+.shortcut-list { display: grid; gap: 10px; margin: 18px 0 0; }
+.shortcut-list div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.shortcut-list dt { margin: 0; }
+.shortcut-list dd { margin: 0; color: var(--muted); font-size: 12px; }
+
 code { font-family: "DejaVu Sans Mono", monospace; font-size: .9em; }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 @keyframes breathe { 50% { opacity: .45; transform: scale(.82); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes drawer-in { from { opacity: 0; transform: translateX(12px); } }
 @keyframes agent-in { from { opacity: 0; transform: translateX(-12px); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(100%); } }
 @keyframes scan { 50% { width: 42px; opacity: .5; } }
 
 @media (max-width: 620px) {
   .stage-vignette { border-width: 3px; border-radius: 10px; }
-  .stage-header { inset: 12px 12px auto; }
-  .connection-chip { max-width: 42px; overflow: hidden; padding: 0 16px; }
-  .connection-chip span:last-child { display: none; }
-  .operator-chip { display: none; }
+  .stage-header { inset: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) auto max(12px, env(safe-area-inset-left)); }
+  .connection-chip { max-width: none; }
+  .connection-chip #connection-label { font-size: 10px; }
+  .operator-chip { display: flex; max-width: 120px; }
+  .operator-chip #operator-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .agent-button span:last-child { display: none; }
   .agent-button { width: 38px; padding: 0; justify-content: center; }
-  .release-control { inset: 12px 58px auto auto; }
+  .release-control { inset: max(56px, env(safe-area-inset-top)) 12px auto auto; }
   .take-control { min-height: 44px; padding: 0 16px; }
-  .control-drawer { inset: 58px 12px 12px; width: auto; }
-  .agent-drawer { inset: 58px 12px 12px; width: auto; }
+  .mode-banner { inset: auto 12px max(12px, env(safe-area-inset-bottom)) 12px; }
+  .control-drawer { inset: auto 0 0 0; width: auto; max-height: min(72dvh, calc(100dvh - 72px)); border-radius: 22px 22px 0 0; animation: sheet-in 180ms ease-out; }
+  .agent-drawer { inset: auto 0 0 0; width: auto; max-height: min(78dvh, calc(100dvh - 72px)); border-radius: 22px 22px 0 0; animation: sheet-in 180ms ease-out; }
+  .lease-warning { inset: 58px 12px auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
