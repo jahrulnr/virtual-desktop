@@ -1,150 +1,127 @@
 # Architecture
 
-## Requirements and decisions
+Relay gives a human and an AI operator one shared Linux desktop. The browser is
+embeddable, takeover does not create a second session, and applications installed
+for a demo survive an ordinary container recreation.
 
-Relay supplies one real Linux desktop that an AI operator and a human viewer see
-and control without switching sessions. The browser client must be embeddable,
-human takeover must be immediate, agent input must be machine-addressable, the
-cursor must feel native, and runtime-installed GUI/Electron applications and user
-files must survive an ordinary container recreation.
+The implementation assumes a community project used locally by one person or a
+small demo group. Identity, fleet scheduling, GPU acceleration, audio, and WAN
+streaming are outside this build. Compose publishes the UI on `127.0.0.1:3000`.
 
-The brief leaves identity, tenancy, Internet exposure, GPU/audio, and retention
-policy unspecified. This implementation therefore chooses a local, single-user
-demo boundary: one container/session, CPU graphics, no audio, unrestricted normal
-outbound browsing, and a port published only on `127.0.0.1`. Production identity,
-per-tenant scheduling, TLS, egress policy, secret injection, and retention are
-explicit follow-up work rather than silent assumptions.
-
-## Process layout
+## One-container process layout
 
 ```text
-browser / host AI client
-        |
-        | HTTP + WebSocket on 127.0.0.1:3000
-        v
-      nginx :8080
-       |        |             |
-       |        |             +--> static control deck + noVNC modules
-       |        +--> control API :8000 (dedicated UID 1001)
-       |                  |        |        |
-       |                  |        |        +--> UID-1000 adapter --> AT-SPI tree
-       |                  |        +--> scrot framebuffer capture
-       |                  +--> xdotool/XTEST after agent lease validation
-       |                           |
-       +--> websockify :6080       v
-                  |           Xvfb :0 + XFCE + desktop applications
-                  v                ^
-             x11vnc :5900 ---------+
+browser -- HTTP/WebSocket --> nginx :8080
+                                  |-- web client + noVNC
+                                  |-- allowlisted Coddy gateway :8001
+                                  |-- control API :8000
+                                  `-- websockify -> x11vnc
+                                                       |
+                                                Xvfb :0 + XFCE
+                                                       |
+                                        Chromium, Files, Terminal,
+                                        and runtime-installed apps
 
-control API -- private Unix socket --> exact-plan install broker (root) --> apt/dpkg
-desktop apps (UID 1000) --> /home/desktop named volume
-install broker (root)   --> /var/lib/relay named volume
+Coddy :12345 -- stateless MCP --> computer-mcp :8090 --> control API
 ```
 
-Supervisor keeps the container's deliberately small process set together. Xvfb
-provides a deterministic 1440x900 X11 screen; XFCE provides familiar
-window management; Chromium is the included browser and launches with its own SUID
-sandbox enabled. Nginx is the only published service and keeps the control API,
-WebSocket stream, web client, and noVNC modules on one origin.
+Supervisor starts and watches every process in one image. Docker therefore has
+one health check, one log stream, and one lifecycle command. The internal code is
+still separated by purpose: Coddy owns conversations and the ReAct loop; the Go
+MCP server owns computer-use tools; the control API owns leases and validated X11
+input; nginx is the only host-facing process.
 
-## Display and streaming choice
+The MCP server listens only on `127.0.0.1` and uses stateless Streamable HTTP.
+Coddy may reconnect or reuse a persisted conversation after `compose down` / `up`
+without carrying an expired transport session ID. This directly avoids the stale
+`session not found` failure that motivated the single-container rebuild.
 
-The scoped build uses X11 + x11vnc + websockify + the noVNC JavaScript client.
-x11vnc exports the same X server used by applications and accepts multiple shared
-viewers. noVNC exposes `viewOnly` at runtime, so every browser starts as an observer
-and only the browser holding the human lease sends VNC input. AI input reaches the
-same X server through XTEST. This makes takeover a policy change, not a second
-desktop or a reconnect.
+## Display and streaming
 
-This choice favors reach and operational simplicity for demos:
+Relay uses X11 + Xvfb + x11vnc + websockify + noVNC. Applications, AI input, and
+human input all meet at the same X server. noVNC can switch `viewOnly` at runtime,
+so takeover changes who may send input without reconnecting the viewer.
 
-| Option | Strength | Cost / reason not selected for v1 |
+| Option | Good fit | Why Relay does or does not use it |
 | --- | --- | --- |
-| x11vnc + noVNC | Mature browser support, one port, shared clients, simple embedding and debugging | More latency/bandwidth than video codecs; no audio |
-| KasmVNC | Better compression, modern browser-focused VNC features, mature container-desktop base | Larger and more opinionated integration than this scoped reference needs |
-| Selkies WebRTC | Low latency, audio, video/GPU-friendly codecs | ICE/TURN, NAT traversal, signaling, and more moving parts for a loopback demo |
+| x11vnc + noVNC | Local demos, browser embeds, shared viewers | Selected: easy to inspect and operate, with acceptable desktop latency |
+| KasmVNC | A richer browser-first VNC stack | Useful, but larger and more opinionated than this source-visible reference needs |
+| Selkies WebRTC | WAN, video, audio, or GPU-heavy sessions | Better media latency, but adds signaling and ICE/TURN work |
 
-The stream boundary is replaceable: Selkies is the recommended next step for
-high-motion/video or WAN use, while the lease and agent APIs remain unchanged.
+Selkies is the natural future streaming swap for high-motion workloads. The lease,
+input, grounding, and Coddy contracts do not depend on VNC.
 
 ## Input, grounding, and cursor
 
-Agent input is a typed, bounded JSON action batch. The unprivileged API validates
-screen coordinates, key names, text lengths, click counts, scroll deltas, batch
-size, and the live lease before constructing `xdotool` argument arrays. It never
-passes operator values through a shell. xdotool uses the XTEST extension, so the
-window system and applications receive ordinary pointer and keyboard events.
+The AI sends typed JSON actions. The control API checks screen coordinates, key
+names, text length, scroll distance, action count, and the current lease before it
+constructs `xdotool` argument arrays. XTEST then delivers normal pointer and
+keyboard events to the desktop.
 
-Grounding is hybrid:
+The Go MCP surface intentionally stays small:
 
-1. Query `/api/v1/accessibility` first for roles, names, bounds, states, and actions.
-2. Use `/api/v1/screenshot` for canvas, image-only, inaccessible, or Electron UI
-   that does not expose enough AT-SPI semantics.
-3. Confirm consequential state changes visually or through accessibility state.
+- `computer` provides screenshot, smooth move, click variants, drag, mouse
+  down/up, cursor position, typing, key chords, held keys, scroll, wait, and
+  release-control;
+- `ui_inspect` returns a bounded AT-SPI accessibility snapshot.
 
-This is more reliable and token-efficient than pure screenshots, while retaining
-coverage where Linux accessibility bridges are incomplete. Chromium is started
-with renderer accessibility forced on. The snapshot is capped at 1,000 nodes to
-bound work and response size.
+Grounding is hybrid. The operator should inspect AT-SPI first, use screenshots for
+canvas, images, or incomplete Electron accessibility, perform a small action, and
+observe again. Long pointer moves use a capped smoothstep path inside the Go
+service, so the model chooses an endpoint rather than generating animation frames.
 
-The cursor is the real X cursor. x11vnc is configured to draw it into the streamed
-framebuffer (`-nocursorshape -cursor most`) rather than asking each client to render
-a synthetic cursor. Agent moves, human moves, and recordings of the VNC stream
-therefore agree on one pointer position. (The separate scrot API image omits the
-cursor.) That small amount of extra encoded pixel damage is
-worth the stronger “real OS access” illusion and avoids a duplicate/teleporting
-client overlay during handoff.
+Relay uses the real X cursor. x11vnc draws it into the streamed framebuffer, so AI
+moves, human moves, and screen recordings agree on one pointer. In observer mode,
+the web client adds a transparent shield above noVNC: the browser pointer remains
+visible, but input cannot enter the desktop until **Take control** succeeds.
 
-## Arbitration and handoff
+## Control handoff
 
-There is one lease with owner `none`, `agent`, or `human`. Agent leases last 12
-seconds, human leases 30 seconds, and active clients heartbeat. A human claim
-always preempts an agent. An agent cannot preempt a human or another agent. Once
-preempted, the old agent's next input returns HTTP 409. noVNC input is also toggled
-to view-only in the human client, so UI state matches server-side enforcement.
+One lease has owner `none`, `agent`, or `human`. Agent leases last 12 seconds and
+human leases last 30 seconds while active clients heartbeat. A human claim always
+preempts the agent. The interrupted tool receives HTTP 409, any held input is
+released, and both sides keep viewing the same applications and framebuffer.
 
-The VNC password also acts as the human-control capability. It remains only in the
-host browser's memory and accompanies takeover, release, heartbeat, and approval
-requests. The operator bearer token cannot mint a human approval. The API runs as
-a separate `relayapi` UID; only that UID can read either API capability or connect
-to the root broker socket. Desktop applications run as UID 1000 and cannot do so.
-
-This is still cooperative arbitration for one trusted browser origin, not a hostile
-multi-user security boundary. A production service needs authenticated viewer
-identities and server-side authorization on the WebSocket path as well.
+The browser removes its transparent shield only after receiving the human lease.
+**Release control** restores observer mode. Coddy can then claim a fresh agent
+lease and continue from the unchanged desktop.
 
 ## Persistence
 
-Persistence is the useful default for repeatable demos:
+Three named volumes keep useful community-demo state while the runtime remains one
+container:
 
-- `desktop-home` stores `/home/desktop`, including Downloads, browser profile,
-  files, and user-local application state.
-- `desktop-state` stores a root-owned manifest of successfully installed APT or
-  `.deb` plans. Entrypoint replay restores them into a newly created container.
-- A `.deb` plan contains its resolved path and SHA-256 digest. Replay stops if the
-  source file is gone or changed.
-- `docker compose down` preserves both volumes; `docker compose down -v` is the
-  explicit full reset.
+- `desktop-home` stores files, Downloads, browser data, and user-local apps;
+- `desktop-state` stores successful approved-install plans for replay;
+- `coddy-state` stores conversations and transcripts.
+
+`docker compose down` preserves all three. `docker compose down -v` is the explicit
+full reset. A local `.deb` replay also verifies its path and SHA-256 digest before
+installation.
 
 ## Reference implementations
 
-Research informed the boundaries rather than being copied wholesale:
+Research informed the shape rather than being copied wholesale:
 
-- [LinuxServer Webtop](https://github.com/linuxserver/docker-webtop) validates the
-  containerized-desktop pattern and currently uses Selkies. Relay reuses the
-  supervised single-container shape, but not its broad runtime flags or UI.
-- [Selkies](https://github.com/selkies-project/selkies) is the preferred future
-  streaming upgrade for WebRTC/audio/GPU sessions.
-- [KasmVNC](https://github.com/kasmtech/KasmVNC) demonstrates browser-oriented VNC
-  hardening and multi-client operation; Relay uses distro noVNC/x11vnc for a
-  smaller source-visible implementation.
+- [LinuxServer Webtop](https://github.com/linuxserver/docker-webtop) demonstrates
+  the supervised container-desktop pattern; current releases use Selkies.
+- [Selkies](https://github.com/selkies-project/selkies) is the candidate streaming
+  upgrade for WebRTC, audio, and GPU sessions.
+- [KasmVNC](https://github.com/kasmtech/KasmVNC) demonstrates a browser-oriented
+  VNC stack and shared viewing.
 - [Anthropic's computer-use demo](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
-  validates Xvfb, x11vnc, noVNC, scrot, and xdotool as an agent desktop stack.
-  Relay adds explicit leases, human preemption, a bounded API, accessibility
-  grounding, and a confirmation broker.
-- [Cua](https://github.com/trycua/cua) informed the hybrid screenshot/accessibility/
-  action abstraction; Relay keeps its own narrow, auditable protocol.
+  validates the Xvfb, x11vnc, noVNC, scrot, and xdotool combination. Relay adds
+  explicit leases, human preemption, accessibility grounding, and persistence.
+- [Cua](https://github.com/trycua/cua) informed the hybrid screenshot,
+  accessibility, and action abstraction.
+- [Agent-Go](https://github.com/forkbikash/agent-go) was evaluated as the temporary
+  harness. Its small coding-agent core is approachable, but it would leave the
+  browser session layer to this project.
+- [Coddy Agent](https://github.com/coddy-project/coddy-agent) was selected because
+  its Go harness already provides OpenAI-compatible providers, HTTP/SSE sessions,
+  skills, permissions, and MCP. Relay pins one commit and carries one narrow image
+  content patch.
 
-The relevant upstream mechanisms are documented in the
-[noVNC RFB API](https://github.com/novnc/noVNC/blob/master/docs/API.md) and
+The underlying client mechanisms are documented by the
+[noVNC RFB API](https://github.com/novnc/noVNC/blob/master/docs/API.md) and the
 [x11vnc project](https://github.com/LibVNC/x11vnc).

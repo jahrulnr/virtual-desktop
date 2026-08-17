@@ -1,4 +1,4 @@
-.PHONY: build up down reset test static smoke logs
+.PHONY: build up down reset test test-go test-web static smoke logs
 
 build:
 	docker compose build
@@ -14,6 +14,14 @@ reset:
 
 test:
 	python3 -m unittest discover -s tests -v
+	$(MAKE) test-go
+	$(MAKE) test-web
+
+test-go:
+	cd computer-mcp && go test ./... && go vet ./...
+
+test-web:
+	node --test tests/web-agent-view.test.mjs
 
 static:
 	./tests/static-checks.sh

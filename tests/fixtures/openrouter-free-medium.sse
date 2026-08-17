@@ -1,0 +1,30 @@
+event: tool_call
+data: {"sessionUpdate":"tool_call","toolCallId":"call-load-skill","title":"load_skill","kind":"other","status":"pending"}
+
+event: tool_call_update
+data: {"sessionUpdate":"tool_call_update","toolCallId":"call-load-skill","status":"in_progress"}
+
+event: tool_call_update
+data: {"sessionUpdate":"tool_call_update","toolCallId":"call-load-skill","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Relay OS Operator loaded."}}]}
+
+event: tool_call
+data: {"sessionUpdate":"tool_call","toolCallId":"call-inspect","title":"relay__ui_inspect","kind":"other","status":"pending"}
+
+event: tool_call_update
+data: {"sessionUpdate":"tool_call_update","toolCallId":"call-inspect","status":"in_progress"}
+
+event: tool_call_update
+data: {"sessionUpdate":"tool_call_update","toolCallId":"call-inspect","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Desktop inspected; Chromium launcher found."}}]}
+
+event: tool_call
+data: {"sessionUpdate":"tool_call","toolCallId":"call-click","title":"relay__computer","kind":"other","status":"pending"}
+
+event: tool_call_update
+data: {"sessionUpdate":"tool_call_update","toolCallId":"call-click","status":"in_progress"}
+
+event: tool_call_update
+data: {"sessionUpdate":"tool_call_update","toolCallId":"call-click","status":"failed","content":[{"type":"content","content":{"type":"text","text":"validating coordinate: type string; want array [x, y]"}}]}
+
+data: {"choices":[{"delta":{"content":"We need to fix the arguments. **coordinate** must be `[368, 146]`, not a string."}}]}
+
+data: [DONE]

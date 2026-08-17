@@ -14,9 +14,5 @@ available. If private reporting is not enabled, contact the repository owner
 privately through their GitHub profile and include only enough detail to establish
 a secure follow-up channel.
 
-Useful reports explain the affected boundary, the minimum reproduction, expected
-impact, and whether the issue can escape the container or expose another user's
-data. Never include real credentials or unrelated personal data.
-
-The current threat model, known limitations, and production hardening work are
-documented in [docs/SECURITY.md](../docs/SECURITY.md).
+Useful reports explain the affected component, the minimum reproduction, and the
+expected impact. Never include real credentials or unrelated personal data.

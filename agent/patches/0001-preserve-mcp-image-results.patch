@@ -1,0 +1,236 @@
+diff --git a/internal/agent/react.go b/internal/agent/react.go
+index 1eb8b2e..b0b80cf 100644
+--- a/internal/agent/react.go
++++ b/internal/agent/react.go
+@@ -621,7 +621,7 @@ func (a *Agent) runReActLoop(
+ 				continue
+ 			}
+ 
+-			result, execErr := a.executeToolCall(ctx, tc, toolEnv, mode, a.state.GetID(), false)
++			result, imageParts, execErr := a.executeToolCall(ctx, tc, toolEnv, mode, a.state.GetID(), false)
+ 
+ 			var toolResultMsg llm.Message
+ 			if execErr != nil {
+@@ -634,6 +634,7 @@ func (a *Agent) runReActLoop(
+ 				toolResultMsg = llm.Message{
+ 					Role:       llm.RoleTool,
+ 					Content:    result,
++					ImageParts: imageParts,
+ 					ToolCallID: tc.ID,
+ 				}
+ 			}
+@@ -758,7 +759,7 @@ func loopAbortError(c loopAbortChannel) error {
+ }
+ 
+ // executeToolCall runs a single tool call and reports updates to the client.
+-func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, env *tools.Env, mode, sessionID string, skipPermission bool) (string, error) {
++func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, env *tools.Env, mode, sessionID string, skipPermission bool) (string, []llm.ImagePart, error) {
+ 	env.ToolCallID = strings.TrimSpace(tc.ID)
+ 	defer func() { env.ToolCallID = "" }()
+ 
+@@ -857,7 +858,7 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, env *tools
+ 				ToolCallID:    tc.ID,
+ 				Status:        "cancelled",
+ 			})
+-			return "permission denied by user", nil
++			return "permission denied by user", nil, nil
+ 		}
+ 		if st := sessionStatePtr(a.state); st != nil {
+ 			permission.RecordAllowAlways(st, tc.Name, tc.InputJSON, env.CWD, permResult)
+@@ -866,13 +867,14 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, env *tools
+ 
+ 	// Execute the tool.
+ 	var result string
++	var imageParts []llm.ImagePart
+ 	var execErr error
+ 
+ 	// Check if it's an MCP tool (name contains __).
+ 	if idx := strings.Index(tc.Name, "__"); idx >= 0 {
+ 		serverName := tc.Name[:idx]
+ 		toolName := tc.Name[idx+2:]
+-		result, execErr = a.callMCPTool(ctx, serverName, toolName, tc.InputJSON)
++		result, imageParts, execErr = a.callMCPToolResult(ctx, serverName, toolName, tc.InputJSON)
+ 		// MCP calls bypass the registry, so apply the output ceiling here (the
+ 		// "default" knob, since MCP tool names are not individually configured).
+ 		if execErr == nil {
+@@ -920,7 +922,7 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, env *tools
+ 		Meta:          previewMeta,
+ 	})
+ 
+-	return result, execErr
++	return result, imageParts, execErr
+ }
+ 
+ // mcpToolDefinitions converts the tools of connected MCP clients into LLM
+@@ -942,15 +944,21 @@ func mcpToolDefinitions(clients []*mcp.Client, allowed func(server, tool string)
+ // callMCPTool routes a tool call to the appropriate MCP client. Disabled
+ // tools are rejected here too so stale history cannot invoke them.
+ func (a *Agent) callMCPTool(ctx context.Context, serverName, toolName, argsJSON string) (string, error) {
++	text, _, err := a.callMCPToolResult(ctx, serverName, toolName, argsJSON)
++	return text, err
++}
++
++func (a *Agent) callMCPToolResult(ctx context.Context, serverName, toolName, argsJSON string) (string, []llm.ImagePart, error) {
+ 	if allowed := a.state.GetMCPToolFilter(); !allowed(serverName, toolName) {
+-		return "", fmt.Errorf("MCP tool %s__%s is disabled", serverName, toolName)
++		return "", nil, fmt.Errorf("MCP tool %s__%s is disabled", serverName, toolName)
+ 	}
+ 	for _, client := range a.state.GetMCPClients() {
+ 		if client.Name() == serverName {
+-			return client.CallTool(ctx, toolName, argsJSON)
++			result, err := client.CallToolResult(ctx, toolName, argsJSON)
++			return result.Text, result.Images, err
+ 		}
+ 	}
+-	return "", fmt.Errorf("MCP server not found: %s", serverName)
++	return "", nil, fmt.Errorf("MCP server not found: %s", serverName)
+ }
+ 
+ // buildMessages constructs the message slice to send to the LLM.
+diff --git a/internal/agent/resume_permission.go b/internal/agent/resume_permission.go
+index 25b4255..d8174c2 100644
+--- a/internal/agent/resume_permission.go
++++ b/internal/agent/resume_permission.go
+@@ -51,7 +51,7 @@ func (a *Agent) ResumeAfterPermission(ctx context.Context, toolCallID string, pe
+ 		}
+ 		return a.continueReAct(ctx, mode, toolEnv)
+ 	}
+-	result, execErr := a.executeToolCall(ctx, tc, toolEnv, mode, a.state.GetID(), true)
++	result, imageParts, execErr := a.executeToolCall(ctx, tc, toolEnv, mode, a.state.GetID(), true)
+ 	var toolResultMsg llm.Message
+ 	if execErr != nil {
+ 		toolResultMsg = llm.Message{
+@@ -63,6 +63,7 @@ func (a *Agent) ResumeAfterPermission(ctx context.Context, toolCallID string, pe
+ 		toolResultMsg = llm.Message{
+ 			Role:       llm.RoleTool,
+ 			Content:    result,
++			ImageParts: imageParts,
+ 			ToolCallID: tc.ID,
+ 		}
+ 	}
+diff --git a/internal/llm/openai.go b/internal/llm/openai.go
+index 0081100..4b4150a 100644
+--- a/internal/llm/openai.go
++++ b/internal/llm/openai.go
+@@ -244,6 +244,19 @@ func (p *openAIProvider) buildParams(messages []Message, tools []ToolDefinition)
+ 			}
+ 		case RoleTool:
+ 			oaiMessages = append(oaiMessages, openai.ToolMessage(m.Content, m.ToolCallID))
++			if len(m.ImageParts) > 0 {
++				parts := []openai.ChatCompletionContentPartUnionParam{
++					openai.TextContentPart("Visual observation returned by the preceding tool result."),
++				}
++				for _, ip := range m.ImageParts {
++					if strings.HasPrefix(dataURLMIME(ip.DataURL), "image/") {
++						parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
++							URL: ip.DataURL, Detail: "auto",
++						}))
++					}
++				}
++				oaiMessages = append(oaiMessages, openai.UserMessage(parts))
++			}
+ 		}
+ 	}
+ 
+diff --git a/internal/llm/provider.go b/internal/llm/provider.go
+index cb1a8f4..d07473d 100644
+--- a/internal/llm/provider.go
++++ b/internal/llm/provider.go
+@@ -33,9 +33,8 @@ type ImagePart struct {
+ type Message struct {
+ 	Role    Role   `json:"role"`
+ 	Content string `json:"content"`
+-	// ImageParts, when non-empty, make this a multimodal user message. Only
+-	// supported for RoleUser; ignored on other roles and by providers that do
+-	// not support vision.
++	// ImageParts, when non-empty, make this a multimodal user message or a
++	// multimodal observation attached to a RoleTool result.
+ 	ImageParts []ImagePart `json:"image_parts,omitempty"`
+ 	Reasoning  string      `json:"reasoning,omitempty"`
+ 	// ReasoningSignature is the provider signature for the reasoning block (Anthropic extended
+diff --git a/internal/mcp/client.go b/internal/mcp/client.go
+index ac6b31f..e392f21 100644
+--- a/internal/mcp/client.go
++++ b/internal/mcp/client.go
+@@ -7,6 +7,7 @@ import (
+ 	"bufio"
+ 	"bytes"
+ 	"context"
++	"encoding/base64"
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
+@@ -115,10 +116,22 @@ func (c *Client) Name() string {
+ 
+ // CallTool invokes a tool on the MCP server and returns the result.
+ func (c *Client) CallTool(ctx context.Context, toolName, argsJSON string) (string, error) {
++	result, err := c.CallToolResult(ctx, toolName, argsJSON)
++	return result.Text, err
++}
++
++// ToolResult preserves both text and image content returned by an MCP tool.
++type ToolResult struct {
++	Text   string
++	Images []llm.ImagePart
++}
++
++// CallToolResult invokes a tool without discarding multimodal MCP content.
++func (c *Client) CallToolResult(ctx context.Context, toolName, argsJSON string) (ToolResult, error) {
+ 	var args interface{}
+ 	if argsJSON != "" {
+ 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+-			return "", fmt.Errorf("mcp callTool parse args: %w", err)
++			return ToolResult{}, fmt.Errorf("mcp callTool parse args: %w", err)
+ 		}
+ 	}
+ 
+@@ -127,31 +140,42 @@ func (c *Client) CallTool(ctx context.Context, toolName, argsJSON string) (strin
+ 		"arguments": args,
+ 	})
+ 	if err != nil {
+-		return "", err
++		return ToolResult{}, err
+ 	}
+ 
+ 	// Parse MCP tool result.
+ 	var resp struct {
+ 		Content []struct {
+-			Type string `json:"type"`
+-			Text string `json:"text"`
++			Type     string `json:"type"`
++			Text     string `json:"text"`
++			Data     []byte `json:"data"`
++			MIMEType string `json:"mimeType"`
+ 		} `json:"content"`
+ 		IsError bool `json:"isError"`
+ 	}
+ 	if err := json.Unmarshal(result, &resp); err != nil {
+-		return string(result), nil
++		return ToolResult{Text: string(result)}, nil
+ 	}
+ 
+ 	var parts []string
++	var images []llm.ImagePart
+ 	for _, c := range resp.Content {
+-		if c.Type == "text" {
++		switch c.Type {
++		case "text":
+ 			parts = append(parts, c.Text)
++		case "image":
++			if len(c.Data) > 0 && strings.HasPrefix(c.MIMEType, "image/") {
++				images = append(images, llm.ImagePart{
++					DataURL: "data:" + c.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(c.Data),
++					Name:    "mcp-observation",
++				})
++			}
+ 		}
+ 	}
+ 	text := strings.Join(parts, "\n")
+ 
+ 	if resp.IsError {
+-		return "", fmt.Errorf("mcp tool error: %s", text)
++		return ToolResult{}, fmt.Errorf("mcp tool error: %s", text)
+ 	}
+-	return text, nil
++	return ToolResult{Text: text, Images: images}, nil
+ }

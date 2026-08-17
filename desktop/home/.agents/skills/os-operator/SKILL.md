@@ -26,6 +26,8 @@ directly.
      and actions.
    - Run `relayctl.py screenshot --out /tmp/relay-observe.png` when the tree is
      incomplete or the UI is visual/canvas-based.
+   - Run `relayctl.py cursor` before a relative movement, drag, or when pointer
+     continuity matters. It reports the real OS pointer in framebuffer pixels.
 3. Run `relayctl.py claim --agent-id <id>`. If a human owns the lease, wait for
    release; never impersonate or preempt the human.
 4. Send small input batches, then observe the result. Prefer one semantic action
@@ -46,9 +48,14 @@ python3 scripts/relayctl.py input --agent-id demo --actions '[
   {"type":"click","button":"left"},
   {"type":"text","text":"hello"},
   {"type":"key","keys":["CTRL","L"]},
-  {"type":"scroll","delta":-3}
+  {"type":"scroll","direction":"down","amount":3}
 ]'
 ```
+
+The input endpoint also supports `drag` with start/end coordinates, `button`
+with `state` set to `down` or `up`, `hold_key` with a bounded duration, and
+`wait`. Prefer `drag` over manually separating mouse down/move/up because it
+guarantees a release even when an intermediate step fails.
 
 Use absolute coordinates in the 1440×900 framebuffer. Use AT-SPI bounds when
 available. Do not guess coordinates from a browser-scaled screenshot without
@@ -62,6 +69,12 @@ mapping them back to framebuffer pixels.
   custom Electron chrome, canvases, remote pages, or missing AT-SPI nodes.
 - Keep the real OS pointer visible during demonstrations. Move it away from text
   or important content after an action.
+- Zoom with application shortcuts (`CTRL`+`+`, `CTRL`+`-`, `CTRL`+`0`) and verify
+  the result with a fresh screenshot. Zoom is application state, not a stream
+  transform.
+- For recording, ask for confirmation before starting because a recording may
+  capture private content. Recording is intentionally not an input primitive;
+  use an approved application in the desktop session.
 - Save task-created files under `/home/desktop` unless the user names another
   in-scope location.
 
