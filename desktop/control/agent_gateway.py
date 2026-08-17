@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hmac
 import http.client
 import json
 import os
@@ -12,6 +11,8 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from .auth import secrets_match
 
 MAX_UPSTREAM_BYTES = 16 * 1024 * 1024
 
@@ -41,6 +42,7 @@ class RoutePolicy:
         ("GET", re.compile(rf"^/coddy/sessions/{SESSION}/composer-stream$")),
         ("POST", re.compile(rf"^/coddy/sessions/{SESSION}/permission$")),
         ("POST", re.compile(rf"^/coddy/sessions/{SESSION}/cancel$")),
+        ("POST", re.compile(r"^/coddy/sessions$")),
     )
     SESSION_PATH = re.compile(rf"^/coddy/sessions/({SESSION})/")
 
@@ -54,7 +56,7 @@ class RoutePolicy:
         if path == "/v1/responses" or match is not None:
             return bool(
                 cls.SESSION_VALUE.fullmatch(header)
-                and (match is None or hmac.compare_digest(match.group(1), header))
+                and (match is None or secrets_match(match.group(1), header))
             )
         return not header or cls.SESSION_VALUE.fullmatch(header) is not None
 
@@ -144,7 +146,7 @@ class AgentGatewayHandler(BaseHTTPRequestHandler):
     def _human_authorized(self) -> bool:
         supplied = self.headers.get("X-Human-Control-Token", "")
         expected = self.server.human_token  # type: ignore[attr-defined]
-        return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
+        return secrets_match(supplied, expected)
 
     def _json_error(self, status: int, code: str, message: str) -> None:
         body = json.dumps({"error": {"code": code, "message": message}}, separators=(",", ":")).encode()

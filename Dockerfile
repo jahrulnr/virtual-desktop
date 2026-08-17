@@ -50,6 +50,8 @@ RUN apt-get update \
         python3 \
         python3-pyatspi \
         scrot \
+        ffmpeg \
+        tmux \
         supervisor \
         thunar \
         websockify \
@@ -67,16 +69,28 @@ RUN apt-get update \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
+ARG INSTALL_SELKIES=false
+RUN if [ "$INSTALL_SELKIES" = "true" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends \
+        gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good \
+        gstreamer1.0-tools \
+        python3-pip \
+      && PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir selkies \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 RUN groupadd --gid 1000 desktop \
     && groupadd --gid 1001 relayapi \
     && groupadd --gid 1002 relayaccess \
     && groupadd --gid 1003 coddy \
     && useradd --uid 1000 --gid desktop --groups relayaccess --create-home --shell /bin/bash desktop \
     && useradd --uid 1001 --gid relayapi --groups relayaccess --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin relayapi \
-    && useradd --uid 1002 --gid coddy --no-create-home --home-dir /var/lib/coddy --shell /usr/sbin/nologin coddy \
-    && install -d -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop \
+    && useradd --uid 1002 --gid coddy --groups desktop --no-create-home --home-dir /var/lib/coddy --shell /usr/sbin/nologin coddy \
+    && install -d -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop /home/desktop/workspace \
     && install -d -o coddy -g coddy -m 0700 /var/lib/coddy \
-    && install -d -o coddy -g coddy -m 0750 /workspace /opt/relay-agent/skills/os-operator \
+    && install -d -o coddy -g coddy -m 0750 /opt/relay-agent/skills/os-operator \
     && install -d /opt/relay/control /opt/relay/broker /opt/relay/web /usr/share/licenses/coddy
 
 COPY --from=computer-mcp-build /out/relay-computer-mcp /usr/local/bin/relay-computer-mcp

@@ -19,6 +19,7 @@ class AgentGatewayPolicyTests(unittest.TestCase):
             ("GET", "/coddy/sessions/sess_0123456789abcdef/composer-stream"),
             ("POST", "/coddy/sessions/sess_0123456789abcdef/permission"),
             ("POST", "/coddy/sessions/sess_0123456789abcdef/cancel"),
+            ("POST", "/coddy/sessions"),
         ]
         for method, path in allowed:
             with self.subTest(method=method, path=path):
@@ -41,6 +42,7 @@ class AgentGatewayPolicyTests(unittest.TestCase):
         path = "/coddy/sessions/sess_0123456789abcdef/messages"
         self.assertTrue(RoutePolicy.session_matches(path, "sess_0123456789abcdef"))
         self.assertFalse(RoutePolicy.session_matches(path, "sess_ffffffffffffffff"))
+        self.assertFalse(RoutePolicy.session_matches(path, "sess_0123456789abcdef00"))
         self.assertFalse(RoutePolicy.session_matches(path, ""))
         self.assertTrue(RoutePolicy.session_matches("/v1/responses", "sess_0123456789abcdef"))
         self.assertFalse(RoutePolicy.session_matches("/v1/responses", ""))

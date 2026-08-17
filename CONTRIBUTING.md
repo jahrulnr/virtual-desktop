@@ -81,7 +81,5 @@ instead of a public issue.
 
 ## License
 
-The project does not yet declare an open-source license. By submitting a
-contribution, you confirm that you have the right to submit it, but maintainers
-should settle the repository's license before accepting substantial third-party
-code.
+The project is released under the [MIT License](LICENSE). By submitting a
+contribution, you confirm that you have the right to submit it under that license.

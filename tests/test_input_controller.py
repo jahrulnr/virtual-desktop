@@ -4,6 +4,14 @@ from desktop.control.domain import ConflictError, ControlLease, ValidationError
 from desktop.control.input_controller import InputController
 
 
+class FakeClock:
+    def __init__(self, value: float = 0.0) -> None:
+        self.value = value
+
+    def __call__(self) -> float:
+        return self.value
+
+
 class RecordingRunner:
     def __init__(self):
         self.commands = []
@@ -211,6 +219,32 @@ class InputControllerTests(unittest.TestCase):
         )
 
         self.assertNotIn("--sync", self.runner.commands[0])
+
+    def test_long_batch_renews_agent_lease_before_each_action(self):
+        clock = FakeClock()
+        lease = ControlLease(clock=clock, agent_ttl=12.0)
+        lease.claim_agent("agent-1")
+
+        class AdvancingRunner(RecordingRunner):
+            def run(self, command, cancelled=None):
+                super().run(command, cancelled)
+                if len(self.commands) == 1:
+                    clock.value = 15.0
+
+        controller = InputController(
+            width=1440, height=900, runner=AdvancingRunner(), lease=lease
+        )
+
+        controller.apply(
+            "agent-1",
+            [
+                {"type": "click", "button": "left"},
+                {"type": "click", "button": "left"},
+            ],
+        )
+
+        self.assertEqual(len(controller.runner.commands), 2)
+        self.assertEqual(lease.state()["owner"], "agent")
 
 
 if __name__ == "__main__":

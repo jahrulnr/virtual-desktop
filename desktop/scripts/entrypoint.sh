@@ -11,7 +11,7 @@ install -d -m 0700 -o desktop -g desktop /run/relay-vnc
 install -d -m 1777 -o root -g root /tmp/.X11-unix
 install -d -m 0700 -o root -g root /var/lib/relay
 install -d -m 0700 -o coddy -g coddy /var/lib/coddy
-install -d -m 0755 -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop
+install -d -m 0755 -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop /home/desktop/workspace
 
 if [ ! -e /home/desktop/.relay-xfce-v1 ]; then
   cp -a /opt/relay/home-template/.config /home/desktop/
@@ -27,6 +27,11 @@ if [ ! -e /home/desktop/.relay-initialized ]; then
 fi
 chown -R desktop:desktop /home/desktop
 chown -R coddy:coddy /var/lib/coddy
+chmod 2775 /home/desktop/workspace
+if [ ! -L /workspace ]; then
+  rm -rf /workspace
+  ln -sfn /home/desktop/workspace /workspace
+fi
 
 # Chromium's singleton links include the previous container hostname and are not
 # valid after a named home volume is attached to a recreated container. No desktop

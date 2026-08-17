@@ -46,6 +46,42 @@ func New(service *computer.Service) *mcp.Server {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(document)}}}, nil, nil
 	})
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "runtime_status",
+		Description: "Read the current desktop health, display size, control lease, and uptime.",
+		Annotations: &mcp.ToolAnnotations{Title: "Read desktop runtime status", ReadOnlyHint: true, IdempotentHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ inspectInput) (*mcp.CallToolResult, any, error) {
+		document, err := service.RuntimeStatus(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read runtime status: %w", err)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(document)}}}, nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "record_screen",
+		Description: "Record the shared desktop to MP4 in Downloads/recordings. Modes: START_RECORDING, SAVE_RECORDING, DISCARD_RECORDING.",
+		Annotations: &mcp.ToolAnnotations{Title: "Record desktop screen", ReadOnlyHint: false},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input computer.RecordInput) (*mcp.CallToolResult, any, error) {
+		result, err := service.RecordScreen(ctx, input)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result.Text}}}, nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "terminal",
+		Description: "Manage bounded tmux terminal sessions for shell work. Actions: list, create, capture, send, destroy.",
+		Annotations: &mcp.ToolAnnotations{Title: "Operate tmux terminal sessions", ReadOnlyHint: false},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input computer.TerminalInput) (*mcp.CallToolResult, any, error) {
+		result, err := service.Terminal(ctx, input)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result.Text}}}, nil, nil
+	})
+
 	return server
 }
 

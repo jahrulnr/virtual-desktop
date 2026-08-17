@@ -13,10 +13,31 @@ import (
 
 type Relay interface {
 	Apply(context.Context, string, []relay.Action) error
+	Heartbeat(context.Context, string) error
 	Screenshot(context.Context) ([]byte, error)
 	Accessibility(context.Context) ([]byte, error)
 	Cursor(context.Context) (relay.CursorPosition, error)
 	Release(context.Context, string) error
+	ControlState(context.Context) ([]byte, error)
+	StartRecording(context.Context) ([]byte, error)
+	StopRecording(context.Context, bool) ([]byte, error)
+	ListTerminals(context.Context) ([]byte, error)
+	CreateTerminal(context.Context, string, string) ([]byte, error)
+	TerminalCapture(context.Context, string) ([]byte, error)
+	TerminalSend(context.Context, string, string, bool) ([]byte, error)
+	DestroyTerminal(context.Context, string) ([]byte, error)
+}
+
+type RecordInput struct {
+	Mode string `json:"mode" jsonschema:"required,START_RECORDING, SAVE_RECORDING, or DISCARD_RECORDING"`
+}
+
+type TerminalInput struct {
+	Action string `json:"action" jsonschema:"required,list, create, capture, send, or destroy"`
+	Name   string `json:"name,omitempty" jsonschema:"terminal session name"`
+	Text   string `json:"text,omitempty" jsonschema:"text to send for send action"`
+	Cwd    string `json:"cwd,omitempty" jsonschema:"working directory for create action"`
+	Enter  bool   `json:"enter,omitempty" jsonschema:"press Enter after send action"`
 }
 
 type Input struct {
@@ -127,14 +148,7 @@ func (s *Service) Execute(ctx context.Context, input Input) (Result, error) {
 		if input.Duration < 0 || input.Duration > 10 {
 			return Result{}, fmt.Errorf("duration must be between 0 and 10 seconds")
 		}
-		timer := time.NewTimer(time.Duration(input.Duration * float64(time.Second)))
-		defer timer.Stop()
-		select {
-		case <-ctx.Done():
-			return Result{}, ctx.Err()
-		case <-timer.C:
-			return Result{Text: fmt.Sprintf("Waited %.3f seconds.", input.Duration)}, nil
-		}
+		return Result{Text: fmt.Sprintf("Waited %.3f seconds.", input.Duration)}, s.waitWithLease(ctx, input.Duration)
 	case "release_control":
 		if err := s.relay.Release(ctx, s.agentID); err != nil {
 			return Result{}, err
@@ -154,6 +168,115 @@ func (s *Service) Inspect(ctx context.Context) (json.RawMessage, error) {
 		return nil, fmt.Errorf("desktop returned invalid accessibility JSON")
 	}
 	return data, nil
+}
+
+func (s *Service) RuntimeStatus(ctx context.Context) (json.RawMessage, error) {
+	data, err := s.relay.ControlState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, fmt.Errorf("desktop returned invalid runtime JSON")
+	}
+	return data, nil
+}
+
+func (s *Service) RecordScreen(ctx context.Context, input RecordInput) (Result, error) {
+	switch input.Mode {
+	case "START_RECORDING":
+		data, err := s.relay.StartRecording(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: "Screen recording started. " + string(data)}, nil
+	case "SAVE_RECORDING":
+		data, err := s.relay.StopRecording(ctx, false)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: "Screen recording saved. " + string(data)}, nil
+	case "DISCARD_RECORDING":
+		data, err := s.relay.StopRecording(ctx, true)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: "Screen recording discarded. " + string(data)}, nil
+	default:
+		return Result{}, fmt.Errorf("mode must be START_RECORDING, SAVE_RECORDING, or DISCARD_RECORDING")
+	}
+}
+
+func (s *Service) Terminal(ctx context.Context, input TerminalInput) (Result, error) {
+	switch input.Action {
+	case "list":
+		data, err := s.relay.ListTerminals(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "create":
+		if input.Name == "" {
+			return Result{}, fmt.Errorf("name is required for create")
+		}
+		data, err := s.relay.CreateTerminal(ctx, input.Name, input.Cwd)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "capture":
+		if input.Name == "" {
+			return Result{}, fmt.Errorf("name is required for capture")
+		}
+		data, err := s.relay.TerminalCapture(ctx, input.Name)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "send":
+		if input.Name == "" || input.Text == "" {
+			return Result{}, fmt.Errorf("name and text are required for send")
+		}
+		data, err := s.relay.TerminalSend(ctx, input.Name, input.Text, input.Enter)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "destroy":
+		if input.Name == "" {
+			return Result{}, fmt.Errorf("name is required for destroy")
+		}
+		data, err := s.relay.DestroyTerminal(ctx, input.Name)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	default:
+		return Result{}, fmt.Errorf("action must be list, create, capture, send, or destroy")
+	}
+}
+
+func (s *Service) waitWithLease(ctx context.Context, seconds float64) error {
+	deadline := time.Now().Add(time.Duration(seconds * float64(time.Second)))
+	for {
+		if err := s.relay.Heartbeat(ctx, s.agentID); err != nil {
+			return err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil
+		}
+		wait := remaining
+		if wait > 4*time.Second {
+			wait = 4 * time.Second
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (s *Service) click(ctx context.Context, input Input) (Result, error) {

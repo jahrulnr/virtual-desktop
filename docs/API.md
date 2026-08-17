@@ -22,7 +22,11 @@ deployment it must travel only over HTTPS.
 
 ## Health and lease
 
-- `GET /api/v1/health` — status, display dimensions, and current lease; public.
+- `GET /api/v1/health` — status, uptime, display dimensions, current lease, recording
+  state, and streaming backend (`vnc` or `selkies`); public.
+- `GET /api/v1/events` — recent control and lifecycle events; public.
+- `GET /api/v1/events/stream` — Server-Sent Events stream of the same event log; public.
+- `GET /metrics` — Prometheus text exposition of relay counters; public.
 - `GET /api/v1/control` — current lease; public.
 - `POST /api/v1/control/agent/{claim|heartbeat|release}` — body
   `{"agentId":"operator-1"}`; bearer token required.
@@ -79,6 +83,33 @@ Coordinates are absolute framebuffer pixels. Buttons are `left`, `middle`, or
 xdotool key names; scroll direction is `up`, `down`, `left`, or `right` and its
 amount is 1–10. Wait and held-key duration are bounded.
 
+## Screen recording
+
+Recording uses FFmpeg x11grab and writes MP4 files under
+`/home/desktop/Downloads/recordings/`. Saved files are capped at 512 MiB.
+
+- `GET /api/v1/recording` — bearer token; returns `{active, startedAtMs?, outputPath?}`.
+- `POST /api/v1/recording/start` — bearer token or human capability; starts capture.
+- `POST /api/v1/recording/stop` — bearer token or human capability; saves the file and
+  returns `{status:"saved", path, sizeBytes, durationMs}`.
+- `POST /api/v1/recording/discard` — bearer token or human capability; stops without
+  saving and returns `{status:"discarded"}`.
+
+Only one recording may be active at a time. Conflicts return 409.
+
+## Terminals
+
+The tmux bridge exposes bounded shell sessions for agents. Session names match
+`^[a-z][a-z0-9-]{0,31}$`. Capture is limited to 200 lines and 64 KiB; input is
+limited to 4 KiB per request.
+
+- `GET /api/v1/terminals` — bearer token; lists active sessions.
+- `POST /api/v1/terminals` — bearer token; body `{"name":"main","cwd":"/home/desktop"}`.
+- `GET /api/v1/terminals/{name}/capture` — bearer token; returns recent pane output.
+- `POST /api/v1/terminals/{name}/input` — bearer token; body
+  `{"text":"ls\n","enter":true}`.
+- `POST /api/v1/terminals/{name}/destroy` — bearer token; closes the session.
+
 ## Computer MCP
 
 Coddy connects to `http://127.0.0.1:8090/mcp` inside the desktop container using
@@ -89,11 +120,16 @@ credential. The server exposes:
   `right_click`, `middle_click`, `double_click`, `triple_click`,
   `left_click_drag`, `left_mouse_down`, `left_mouse_up`, `cursor_position`,
   `type`, `key`, `hold_key`, `scroll`, `wait`, and `release_control`;
-- `ui_inspect`, returning the bounded AT-SPI JSON snapshot.
+- `ui_inspect`, returning the bounded AT-SPI JSON snapshot;
+- `record_screen` with modes `START_RECORDING`, `SAVE_RECORDING`, and
+  `DISCARD_RECORDING`;
+- `terminal` with actions `list`, `create`, `capture`, `send`, and `destroy`.
 
 Screenshot results contain a real MCP `image` content block. Pointer-targeted
-actions accept `[x,y]` in the 1440×900 framebuffer and automatically obtain an
-agent lease. A live human lease is never preempted and surfaces as a tool error.
+actions accept `[x,y]` in the 1440×900 framebuffer, or omit `coordinate` to act
+at the current pointer, and automatically obtain an agent lease. `wait` is an
+input action on the live lease so human takeover can cancel it. A live human
+lease is never preempted and surfaces as a tool error.
 
 ## Browser-to-Coddy gateway
 
@@ -143,6 +179,15 @@ Content-Type: application/json
 The broker consumes the approval before invoking apt. It accepts no shell command,
 repository edit, URL, maintainer-script override, or arbitrary filesystem path.
 Package installation may take several minutes; the client timeout is 920 seconds.
+
+## Streaming backends
+
+The default browser canvas uses noVNC over websockify. Set `RELAY_STREAMING=selkies`
+in the container environment to prefer Selkies WebRTC instead. Build with
+`INSTALL_SELKIES=true` to include the optional Selkies package. When Selkies is
+active, health reports `"streaming":{"backend":"selkies","selkiesPath":"/selkies/"}` and
+nginx proxies `/selkies/` to the local Selkies listener. The web shell embeds that
+path when the backend is Selkies; default builds keep noVNC over websockify.
 
 ## Errors
 

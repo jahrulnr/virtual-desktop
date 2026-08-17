@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import subprocess
 import threading
-from collections.abc import Sequence
 from collections.abc import Callable
 from typing import Protocol
 
@@ -119,7 +118,9 @@ class InputController:
         self._release_held()
 
     def _assert_active(self, owner_id: str, generation: int) -> None:
-        self.lease.assert_owner("agent", owner_id)
+        # Renew before expiry checks so long batches (smooth paths, hold_key, wait)
+        # can exceed the 12-second agent TTL without losing mid-batch ownership.
+        self.lease.extend_if_owner("agent", owner_id)
         if self._cancelled(generation):
             raise ConflictError("desktop input was preempted")
 

@@ -15,10 +15,13 @@ runtime-installed Electron apps.
   input against the same display the human sees.
 - Show the real X11 cursor in the streamed desktop.
 - Keep the browser pointer visible above a transparent observer shield; send input
-  into noVNC only after **Take control** succeeds.
+  into noVNC only after **Take control** succeeds. The take-control action lives
+  in the chrome so the framebuffer stays fully visible while monitoring.
+- Share clipboard text between the browser and the desktop while a human lease is
+  active.
 - Allow approved APT packages and local `.deb` files to be installed at runtime.
-- Persist desktop files, successful install plans, and Coddy conversations across
-  normal container recreation.
+- Persist desktop files, a shared `~/workspace`, successful install plans, and
+  Coddy conversations across normal container recreation.
 - Provide a browser-visible agent timeline and OpenAI-compatible provider config.
 - Reset all persisted state with one documented command.
 - Operate as one Docker Compose service and one runtime container.

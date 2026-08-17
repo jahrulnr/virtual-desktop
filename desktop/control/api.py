@@ -4,21 +4,24 @@
 from __future__ import annotations
 
 import argparse
-import hmac
 import json
 import os
 import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from .auth import secrets_match
 from .domain import ConflictError, ControlLease, ValidationError
+from .events import EventLog
 from .input_controller import InputController, SubprocessRunner
+from .metrics import MetricsRegistry
+from .recording import RecordingConflictError, RecordingError, ScreenRecorder
+from .tmux_bridge import TerminalError, TerminalValidationError, TmuxBridge
 
 
 class Broker(Protocol):
@@ -147,6 +150,10 @@ class ControlApplication:
         cursor: CursorSource,
         width: int,
         height: int,
+        events: EventLog | None = None,
+        metrics: MetricsRegistry | None = None,
+        recorder: ScreenRecorder | None = None,
+        terminals: TmuxBridge | None = None,
     ) -> None:
         if len(token) < 12:
             raise ValueError("operator token must have at least 12 characters")
@@ -162,6 +169,13 @@ class ControlApplication:
         self.cursor = cursor
         self.width = width
         self.height = height
+        self.events = events or EventLog()
+        self.metrics = metrics or MetricsRegistry()
+        self.recorder = recorder or ScreenRecorder(width=width, height=height)
+        self.terminals = terminals or TmuxBridge()
+
+    def _emit(self, kind: str, title: str, detail: dict[str, object] | None = None) -> None:
+        self.events.emit(kind, title, detail)
 
     def handle(
         self, method: str, path: str, headers: object, body: object | None
@@ -171,7 +185,15 @@ class ControlApplication:
         except ValidationError as error:
             return self._error(422, "VALIDATION_ERROR", str(error))
         except ConflictError as error:
+            self.metrics.inc("relay_control_conflicts_total")
             return self._error(409, "CONTROL_CONFLICT", str(error))
+        except RecordingConflictError as error:
+            self.metrics.inc("relay_control_conflicts_total")
+            return self._error(409, "CONTROL_CONFLICT", str(error))
+        except (RecordingError, TerminalError) as error:
+            return self._error(503, "DEPENDENCY_UNAVAILABLE", str(error))
+        except TerminalValidationError as error:
+            return self._error(422, "VALIDATION_ERROR", str(error))
         except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
             return self._error(503, "DEPENDENCY_UNAVAILABLE", "desktop dependency failed")
         except Exception:
@@ -181,14 +203,25 @@ class ControlApplication:
         self, method: str, path: str, headers: object, body: object | None
     ) -> Response:
         if method == "GET" and path == "/api/v1/health":
+            streaming_backend = os.environ.get("RELAY_STREAMING", "vnc")
             return json_response(
                 200,
                 {
                     "status": "ok",
+                    "uptimeMs": self.events.uptime_ms(),
                     "display": {"width": self.width, "height": self.height},
                     "control": self.lease.state(),
+                    "recording": self.recorder.state().as_dict(),
+                    "streaming": {
+                        "backend": streaming_backend,
+                        "selkiesPath": "/selkies/" if streaming_backend == "selkies" else None,
+                    },
                 },
             )
+        if method == "GET" and path == "/metrics":
+            return Response(200, self.metrics.prometheus().encode("utf-8"), "text/plain; version=0.0.4; charset=utf-8")
+        if method == "GET" and path == "/api/v1/events":
+            return json_response(200, {"events": self.events.list(50)})
         if method == "GET" and path == "/api/v1/control":
             return json_response(200, self.lease.state())
         if method == "GET" and path == "/api/v1/screenshot":
@@ -203,6 +236,22 @@ class ControlApplication:
             if not self._authorized(headers):
                 return self._unauthorized()
             return json_response(200, self.cursor.position())
+
+        if method == "GET" and path == "/api/v1/recording":
+            if not self._authorized(headers):
+                return self._unauthorized()
+            return json_response(200, self.recorder.state().as_dict())
+
+        if method == "GET" and path == "/api/v1/terminals":
+            if not self._authorized(headers):
+                return self._unauthorized()
+            return json_response(200, {"sessions": self.terminals.list_sessions()})
+
+        if method == "GET" and path.startswith("/api/v1/terminals/") and path.endswith("/capture"):
+            if not self._authorized(headers):
+                return self._unauthorized()
+            name = path.split("/")[4]
+            return json_response(200, self.terminals.capture(name))
 
         if method != "POST":
             return self._error(404, "NOT_FOUND", "route not found")
@@ -221,6 +270,28 @@ class ControlApplication:
                 201, self.broker.request({"action": "approve", "plan": body.get("plan")})
             )
 
+        if path == "/api/v1/recording/start":
+            if not self._operator_request(headers):
+                return self._unauthorized()
+            state = self.recorder.start()
+            self.metrics.inc("relay_recording_actions_total")
+            self._emit("recording.started", "Screen recording started", state.as_dict())
+            return json_response(200, state.as_dict())
+        if path == "/api/v1/recording/stop":
+            if not self._operator_request(headers):
+                return self._unauthorized()
+            result = self.recorder.stop(save=True)
+            self.metrics.inc("relay_recording_actions_total")
+            self._emit("recording.saved", "Screen recording saved", result)
+            return json_response(200, result)
+        if path == "/api/v1/recording/discard":
+            if not self._operator_request(headers):
+                return self._unauthorized()
+            result = self.recorder.stop(save=False)
+            self.metrics.inc("relay_recording_actions_total")
+            self._emit("recording.discarded", "Screen recording discarded", result)
+            return json_response(200, result)
+
         if not self._authorized(headers):
             return self._unauthorized()
 
@@ -229,7 +300,37 @@ class ControlApplication:
         if path == "/api/v1/input":
             agent_id = self._identifier(body.get("agentId"), "agentId")
             self.input.apply(agent_id, body.get("actions"))
+            self.metrics.inc("relay_input_batches_total")
             return Response(204)
+        if path == "/api/v1/terminals":
+            name = self._identifier(body.get("name"), "name")
+            cwd = body.get("cwd")
+            if cwd is not None and not isinstance(cwd, str):
+                raise ValidationError("cwd must be a string")
+            result = self.terminals.create(
+                name,
+                cwd=cwd if isinstance(cwd, str) else None,
+            )
+            self.metrics.inc("relay_terminal_commands_total")
+            self._emit("terminal.created", f"Terminal session {name} created", result)
+            return json_response(201, result)
+        if path.startswith("/api/v1/terminals/") and path.endswith("/input"):
+            name = path.split("/")[4]
+            text = body.get("text")
+            if not isinstance(text, str):
+                raise ValidationError("text is required")
+            enter = body.get("enter", True)
+            if not isinstance(enter, bool):
+                raise ValidationError("enter must be a boolean")
+            result = self.terminals.send(name, text, enter=enter)
+            self.metrics.inc("relay_terminal_commands_total")
+            return json_response(200, result)
+        if path.startswith("/api/v1/terminals/") and path.endswith("/destroy"):
+            name = path.split("/")[4]
+            result = self.terminals.destroy(name)
+            self.metrics.inc("relay_terminal_commands_total")
+            self._emit("terminal.destroyed", f"Terminal session {name} destroyed", result)
+            return json_response(200, result)
         if path == "/api/v1/installs":
             result = self.broker.request(
                 {
@@ -244,24 +345,41 @@ class ControlApplication:
     def _human_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
         owner_id = self._identifier(body.get("sessionId"), "sessionId")
         if action == "claim":
+            previous = self.lease.state()
             state = self.lease.claim_human(owner_id)
             self.input.preempt()
+            if previous.get("owner") == "agent":
+                self._emit(
+                    "control.preempted",
+                    "Human preempted the agent",
+                    {"previousOwnerId": previous.get("ownerId")},
+                )
+            self._emit("control.claimed", "Human claimed control", {"ownerId": owner_id})
+            self.metrics.inc("relay_lease_transitions_total")
             return state
         if action == "heartbeat":
             return self.lease.heartbeat("human", owner_id)
         if action == "release":
-            return self.lease.release("human", owner_id)
+            state = self.lease.release("human", owner_id)
+            self._emit("control.released", "Human released control", {"ownerId": owner_id})
+            self.metrics.inc("relay_lease_transitions_total")
+            return state
         raise ValidationError("unsupported human control action")
 
     def _agent_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
         owner_id = self._identifier(body.get("agentId"), "agentId")
         if action == "claim":
-            return self.lease.claim_agent(owner_id)
+            state = self.lease.claim_agent(owner_id)
+            self._emit("control.claimed", "Agent claimed control", {"ownerId": owner_id})
+            self.metrics.inc("relay_lease_transitions_total")
+            return state
         if action == "heartbeat":
             return self.lease.heartbeat("agent", owner_id)
         if action == "release":
             state = self.lease.release("agent", owner_id)
             self.input.preempt()
+            self._emit("control.released", "Agent released control", {"ownerId": owner_id})
+            self.metrics.inc("relay_lease_transitions_total")
             return state
         raise ValidationError("unsupported agent control action")
 
@@ -273,12 +391,14 @@ class ControlApplication:
 
     def _authorized(self, headers: object) -> bool:
         supplied = headers.get("Authorization", "")  # type: ignore[attr-defined]
-        expected = f"Bearer {self.token}"
-        return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
+        return secrets_match(supplied, f"Bearer {self.token}")
 
     def _human_request(self, headers: object) -> bool:
         supplied = headers.get("X-Human-Control-Token", "")  # type: ignore[attr-defined]
-        return isinstance(supplied, str) and hmac.compare_digest(supplied, self.human_token)
+        return secrets_match(supplied, self.human_token)
+
+    def _operator_request(self, headers: object) -> bool:
+        return self._authorized(headers) or self._human_request(headers)
 
     @staticmethod
     def _error(status: int, code: str, message: str) -> Response:
@@ -292,7 +412,27 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
     server_version = "RelayControl/1"
 
     def do_GET(self) -> None:
+        path = urlsplit(self.path).path
+        if path == "/api/v1/events/stream":
+            self._stream_events()
+            return
         self._serve("GET")
+
+    def _stream_events(self) -> None:
+        application = self.server.application  # type: ignore[attr-defined]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            for event in application.events.subscribe():
+                payload = json.dumps(event, separators=(",", ":"))
+                self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_POST(self) -> None:
         self._serve("POST")
@@ -356,6 +496,10 @@ def main() -> None:
     args = parser.parse_args()
     token = Path(args.token_file).read_text(encoding="utf-8").strip()
     human_token = Path(args.human_token_file).read_text(encoding="utf-8").strip()
+    events = EventLog()
+    metrics = MetricsRegistry()
+    terminals = TmuxBridge()
+    terminals.ensure_server()
     lease = ControlLease()
     input_controller = InputController(
         width=args.width,
@@ -374,6 +518,9 @@ def main() -> None:
         cursor=XdotoolCursor(),
         width=args.width,
         height=args.height,
+        events=events,
+        metrics=metrics,
+        terminals=terminals,
     )
     ControlHTTPServer((args.host, args.port), app).serve_forever()
 

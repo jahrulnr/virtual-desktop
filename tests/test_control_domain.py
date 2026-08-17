@@ -55,6 +55,15 @@ class ControlLeaseTests(unittest.TestCase):
         renewed = self.lease.heartbeat("human", "browser-1")
         self.assertGreater(renewed["expiresInMs"], 29000)
 
+    def test_extend_if_owner_renews_before_expiry_check(self):
+        self.lease.claim_agent("agent-1")
+        self.clock.value += 11
+
+        self.lease.extend_if_owner("agent", "agent-1")
+
+        self.assertEqual(self.lease.state()["owner"], "agent")
+        self.assertEqual(self.lease.state()["ownerId"], "agent-1")
+
 
 if __name__ == "__main__":
     unittest.main()

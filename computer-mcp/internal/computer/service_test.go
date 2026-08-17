@@ -19,12 +19,37 @@ func (f *fakeRelay) Apply(_ context.Context, _ string, actions []relay.Action) e
 	f.actions = append(f.actions, actions...)
 	return nil
 }
+func (f *fakeRelay) Heartbeat(context.Context, string) error { return nil }
 func (f *fakeRelay) Screenshot(context.Context) ([]byte, error) { return f.png, nil }
 func (f *fakeRelay) Accessibility(context.Context) ([]byte, error) {
 	return []byte(`{"role":"desktop frame"}`), nil
 }
 func (f *fakeRelay) Cursor(context.Context) (relay.CursorPosition, error) { return f.cursor, nil }
 func (f *fakeRelay) Release(context.Context, string) error                { return nil }
+func (f *fakeRelay) ControlState(context.Context) ([]byte, error) {
+	return []byte(`{"status":"ok"}`), nil
+}
+func (f *fakeRelay) StartRecording(context.Context) ([]byte, error) {
+	return []byte(`{"active":true}`), nil
+}
+func (f *fakeRelay) StopRecording(context.Context, bool) ([]byte, error) {
+	return []byte(`{"status":"saved"}`), nil
+}
+func (f *fakeRelay) ListTerminals(context.Context) ([]byte, error) {
+	return []byte(`{"sessions":[]}`), nil
+}
+func (f *fakeRelay) CreateTerminal(context.Context, string, string) ([]byte, error) {
+	return []byte(`{"name":"demo"}`), nil
+}
+func (f *fakeRelay) TerminalCapture(context.Context, string) ([]byte, error) {
+	return []byte(`{"output":"demo"}`), nil
+}
+func (f *fakeRelay) TerminalSend(context.Context, string, string, bool) ([]byte, error) {
+	return []byte(`{"bytesSent":1}`), nil
+}
+func (f *fakeRelay) DestroyTerminal(context.Context, string) ([]byte, error) {
+	return []byte(`{"status":"destroyed"}`), nil
+}
 
 func TestSmoothMouseMoveInterpolatesFromRealCursor(t *testing.T) {
 	backend := &fakeRelay{cursor: relay.CursorPosition{X: 0, Y: 0}}
@@ -79,6 +104,57 @@ func TestScreenshotIsReturnedAsImageObservation(t *testing.T) {
 	}
 	if string(result.PNG) != string(backend.png) || result.MIMEType != "image/png" {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestWaitGoesThroughRelaySoHumanPreemptionCanCancelIt(t *testing.T) {
+	backend := &fakeRelay{}
+	service := NewService(backend, "coddy-session")
+
+	result, err := service.Execute(context.Background(), Input{Action: "wait", Duration: 0.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "Waited 0.250 seconds." {
+		t.Fatalf("text = %q", result.Text)
+	}
+	if len(backend.actions) != 1 || backend.actions[0].Type != "wait" || backend.actions[0].DurationMS != 250 {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+}
+
+func TestClickWithoutCoordinateActsAtCurrentPointer(t *testing.T) {
+	backend := &fakeRelay{cursor: relay.CursorPosition{X: 40, Y: 50}}
+	service := NewService(backend, "coddy-session")
+
+	result, err := service.Execute(context.Background(), Input{Action: "left_click"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "left click at the current pointer." {
+		t.Fatalf("text = %q", result.Text)
+	}
+	if len(backend.actions) != 1 || backend.actions[0].Type != "click" {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+}
+
+func TestSmoothMoveSkipsWhenPointerIsAlreadyThere(t *testing.T) {
+	backend := &fakeRelay{cursor: relay.CursorPosition{X: 20, Y: 30}}
+	service := NewService(backend, "coddy-session")
+
+	_, err := service.Execute(context.Background(), Input{
+		Action:     "mouse_move",
+		Coordinate: []int{20, 30},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.actions) != 0 {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+	if backend.claims != 0 {
+		t.Fatalf("claims = %d", backend.claims)
 	}
 }
 
