@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/relay-ai/desktop/computer-mcp/internal/relay"
 )
@@ -42,7 +41,7 @@ type TerminalInput struct {
 
 type Input struct {
 	Action          string  `json:"action" jsonschema:"required,GUI action to perform"`
-	Coordinate      []int   `json:"coordinate,omitempty" jsonschema:"target [x,y] in desktop pixels"`
+	Coordinate      []int   `json:"coordinate,omitempty" jsonschema:"optional target [x,y] in desktop pixels; omit to act at the current pointer"`
 	StartCoordinate []int   `json:"start_coordinate,omitempty" jsonschema:"drag start [x,y] in desktop pixels"`
 	Text            string  `json:"text,omitempty" jsonschema:"text to type at the focused control"`
 	Key             string  `json:"key,omitempty" jsonschema:"key or plus-separated key combination such as ctrl+l"`
@@ -86,8 +85,10 @@ func (s *Service) Execute(ctx context.Context, input Input) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if err := s.relay.Apply(ctx, s.agentID, actions); err != nil {
-			return Result{}, err
+		if len(actions) > 0 {
+			if err := s.relay.Apply(ctx, s.agentID, actions); err != nil {
+				return Result{}, err
+			}
 		}
 		return Result{Text: fmt.Sprintf("Mouse moved to (%d, %d).", target[0], target[1])}, nil
 	case "left_click", "right_click", "middle_click", "double_click", "triple_click":
@@ -145,10 +146,17 @@ func (s *Service) Execute(ctx context.Context, input Input) (Result, error) {
 	case "scroll":
 		return s.scroll(ctx, input)
 	case "wait":
-		if input.Duration < 0 || input.Duration > 10 {
-			return Result{}, fmt.Errorf("duration must be between 0 and 10 seconds")
+		if input.Duration == 0 {
+			return Result{Text: "Waited 0.000 seconds."}, nil
 		}
-		return Result{Text: fmt.Sprintf("Waited %.3f seconds.", input.Duration)}, s.waitWithLease(ctx, input.Duration)
+		duration, err := durationMS(input.Duration)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := s.relay.Apply(ctx, s.agentID, []relay.Action{{Type: "wait", DurationMS: duration}}); err != nil {
+			return Result{}, err
+		}
+		return Result{Text: fmt.Sprintf("Waited %.3f seconds.", input.Duration)}, nil
 	case "release_control":
 		if err := s.relay.Release(ctx, s.agentID); err != nil {
 			return Result{}, err
@@ -255,36 +263,8 @@ func (s *Service) Terminal(ctx context.Context, input TerminalInput) (Result, er
 	}
 }
 
-func (s *Service) waitWithLease(ctx context.Context, seconds float64) error {
-	deadline := time.Now().Add(time.Duration(seconds * float64(time.Second)))
-	for {
-		if err := s.relay.Heartbeat(ctx, s.agentID); err != nil {
-			return err
-		}
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return nil
-		}
-		wait := remaining
-		if wait > 4*time.Second {
-			wait = 4 * time.Second
-		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-}
-
 func (s *Service) click(ctx context.Context, input Input) (Result, error) {
-	target, err := coordinate(input.Coordinate, "coordinate")
-	if err != nil {
-		return Result{}, err
-	}
-	actions, err := s.smoothMove(ctx, target[0], target[1])
+	actions, target, err := s.moveToOptional(ctx, input.Coordinate, "coordinate")
 	if err != nil {
 		return Result{}, err
 	}
@@ -303,21 +283,20 @@ func (s *Service) click(ctx context.Context, input Input) (Result, error) {
 	if err := s.relay.Apply(ctx, s.agentID, actions); err != nil {
 		return Result{}, err
 	}
-	return Result{Text: fmt.Sprintf("%s at (%d, %d).", strings.ReplaceAll(input.Action, "_", " "), target[0], target[1])}, nil
+	if target != nil {
+		return Result{Text: fmt.Sprintf("%s at (%d, %d).", strings.ReplaceAll(input.Action, "_", " "), target[0], target[1])}, nil
+	}
+	return Result{Text: strings.ReplaceAll(input.Action, "_", " ") + " at the current pointer."}, nil
 }
 
 func (s *Service) scroll(ctx context.Context, input Input) (Result, error) {
-	target, err := coordinate(input.Coordinate, "coordinate")
-	if err != nil {
-		return Result{}, err
-	}
 	if input.ScrollAmount < 1 || input.ScrollAmount > 10 {
 		return Result{}, fmt.Errorf("scroll_amount must be between 1 and 10")
 	}
 	if input.ScrollDirection != "up" && input.ScrollDirection != "down" && input.ScrollDirection != "left" && input.ScrollDirection != "right" {
 		return Result{}, fmt.Errorf("scroll_direction must be up, down, left, or right")
 	}
-	actions, err := s.smoothMove(ctx, target[0], target[1])
+	actions, target, err := s.moveToOptional(ctx, input.Coordinate, "coordinate")
 	if err != nil {
 		return Result{}, err
 	}
@@ -325,7 +304,25 @@ func (s *Service) scroll(ctx context.Context, input Input) (Result, error) {
 	if err := s.relay.Apply(ctx, s.agentID, actions); err != nil {
 		return Result{}, err
 	}
-	return Result{Text: fmt.Sprintf("Scrolled %s by %d at (%d, %d).", input.ScrollDirection, input.ScrollAmount, target[0], target[1])}, nil
+	if target != nil {
+		return Result{Text: fmt.Sprintf("Scrolled %s by %d at (%d, %d).", input.ScrollDirection, input.ScrollAmount, target[0], target[1])}, nil
+	}
+	return Result{Text: fmt.Sprintf("Scrolled %s by %d at the current pointer.", input.ScrollDirection, input.ScrollAmount)}, nil
+}
+
+func (s *Service) moveToOptional(ctx context.Context, value []int, name string) ([]relay.Action, *[2]int, error) {
+	if len(value) == 0 {
+		return nil, nil, nil
+	}
+	target, err := coordinate(value, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	actions, err := s.smoothMove(ctx, target[0], target[1])
+	if err != nil {
+		return nil, nil, err
+	}
+	return actions, &target, nil
 }
 
 func (s *Service) smoothMove(ctx context.Context, targetX, targetY int) ([]relay.Action, error) {
@@ -334,6 +331,9 @@ func (s *Service) smoothMove(ctx context.Context, targetX, targetY int) ([]relay
 		return nil, err
 	}
 	distance := math.Hypot(float64(targetX-position.X), float64(targetY-position.Y))
+	if distance < 1 {
+		return nil, nil
+	}
 	steps := int(math.Ceil(distance / 32))
 	if steps < 1 {
 		steps = 1
