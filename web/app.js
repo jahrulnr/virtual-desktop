@@ -63,6 +63,10 @@ const fullscreenLabel = document.querySelector("#fullscreen-label");
 const newAgentSession = document.querySelector("#new-agent-session");
 const copySessionId = document.querySelector("#copy-session-id");
 const disconnectButton = document.querySelector("#disconnect");
+const startRecording = document.querySelector("#start-recording");
+const stopRecording = document.querySelector("#stop-recording");
+const discardRecording = document.querySelector("#discard-recording");
+const activityLog = document.querySelector("#activity-log");
 const sessionId = crypto.randomUUID();
 const storedAgentSession = localStorage.getItem("relay.coddy.session");
 let agentSessionId = /^sess_[0-9a-f]{16,64}$/.test(storedAgentSession || "")
@@ -472,6 +476,36 @@ copySessionId?.addEventListener("click", async () => {
   }
 });
 
+let eventSource;
+
+function appendActivityLine(event) {
+  if (!activityLog || event.kind === "heartbeat") return;
+  const line = `[${event.kind}] ${event.title}`;
+  activityLog.textContent = `${activityLog.textContent}${line}\n`.slice(-4000);
+}
+
+function connectActivityStream() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource("/api/v1/events/stream");
+  eventSource.onmessage = (message) => {
+    try {
+      appendActivityLine(JSON.parse(message.data));
+    } catch {
+      /* ignore malformed stream payloads */
+    }
+  };
+}
+
+async function recordingAction(path) {
+  const result = await api(path, { method: "POST", human: true, body: "{}" });
+  announcer.textContent = result?.path ? `Recording saved to ${result.path}` : `Recording ${result?.status || "updated"}`;
+  refreshDesktopHealth();
+}
+
+startRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/start"));
+stopRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/stop"));
+discardRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/discard"));
+
 disconnectButton?.addEventListener("click", () => {
   humanToken = "";
   closeDrawers();
@@ -877,6 +911,7 @@ setInterval(async () => {
 }, 5000);
 
 connect();
+connectActivityStream();
 refreshLease();
 refreshDesktopHealth();
 updateSessionMeta();

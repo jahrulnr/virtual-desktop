@@ -27,6 +27,27 @@ func (fakeBackend) Release(context.Context, string) error { return nil }
 func (fakeBackend) ControlState(context.Context) ([]byte, error) {
 	return []byte(`{"status":"ok","control":{"owner":"none"}}`), nil
 }
+func (fakeBackend) StartRecording(context.Context) ([]byte, error) {
+	return []byte(`{"active":true}`), nil
+}
+func (fakeBackend) StopRecording(context.Context, bool) ([]byte, error) {
+	return []byte(`{"status":"saved"}`), nil
+}
+func (fakeBackend) ListTerminals(context.Context) ([]byte, error) {
+	return []byte(`{"sessions":[]}`), nil
+}
+func (fakeBackend) CreateTerminal(context.Context, string, string) ([]byte, error) {
+	return []byte(`{"name":"demo"}`), nil
+}
+func (fakeBackend) TerminalCapture(context.Context, string) ([]byte, error) {
+	return []byte(`{"output":"demo"}`), nil
+}
+func (fakeBackend) TerminalSend(context.Context, string, string, bool) ([]byte, error) {
+	return []byte(`{"bytesSent":1}`), nil
+}
+func (fakeBackend) DestroyTerminal(context.Context, string) ([]byte, error) {
+	return []byte(`{"status":"destroyed"}`), nil
+}
 
 func TestComputerToolReturnsMCPImageContent(t *testing.T) {
 	ctx := context.Background()

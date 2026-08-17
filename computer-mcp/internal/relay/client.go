@@ -144,6 +144,101 @@ func (c *Client) ControlState(ctx context.Context) ([]byte, error) {
 	return readLimited(response.Body, maxResponseBytes)
 }
 
+func (c *Client) StartRecording(ctx context.Context) ([]byte, error) {
+	response, err := c.request(ctx, http.MethodPost, "/api/v1/recording/start", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
+func (c *Client) StopRecording(ctx context.Context, discard bool) ([]byte, error) {
+	path := "/api/v1/recording/stop"
+	if discard {
+		path = "/api/v1/recording/discard"
+	}
+	response, err := c.request(ctx, http.MethodPost, path, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
+func (c *Client) ListTerminals(ctx context.Context) ([]byte, error) {
+	response, err := c.request(ctx, http.MethodGet, "/api/v1/terminals", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
+func (c *Client) CreateTerminal(ctx context.Context, name, cwd string) ([]byte, error) {
+	body := map[string]any{"name": name}
+	if cwd != "" {
+		body["cwd"] = cwd
+	}
+	response, err := c.request(ctx, http.MethodPost, "/api/v1/terminals", body)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
+func (c *Client) TerminalCapture(ctx context.Context, name string) ([]byte, error) {
+	response, err := c.request(ctx, http.MethodGet, "/api/v1/terminals/"+name+"/capture", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
+func (c *Client) TerminalSend(ctx context.Context, name, text string, enter bool) ([]byte, error) {
+	response, err := c.request(ctx, http.MethodPost, "/api/v1/terminals/"+name+"/input", map[string]any{
+		"text":  text,
+		"enter": enter,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
+func (c *Client) DestroyTerminal(ctx context.Context, name string) ([]byte, error) {
+	response, err := c.request(ctx, http.MethodPost, "/api/v1/terminals/"+name+"/destroy", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := responseError(response); err != nil {
+		return nil, err
+	}
+	return readLimited(response.Body, maxResponseBytes)
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, body, destination any) error {
 	response, err := c.request(ctx, method, path, body)
 	if err != nil {

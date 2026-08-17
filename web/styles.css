@@ -522,6 +522,18 @@ h1 { margin: 4px 0 0; font-size: 24px; letter-spacing: -0.045em; }
 .drawer-tool:hover { background: rgb(255 255 255 / 0.08); }
 
 .approval-panel { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.activity-panel { margin-top: 16px; }
+.activity-panel pre {
+  max-height: 140px;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #090b09;
+  color: #aeb4ae;
+  font: 9px/1.45 "DejaVu Sans Mono", monospace;
+}
 .approval-panel summary { font-size: 13px; font-weight: 650; }
 .panel-copy { margin: 8px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .approval-panel form { display: grid; gap: 8px; }

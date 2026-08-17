@@ -63,6 +63,18 @@ rg -q 'id="new-agent-session"' web/index.html
 rg -q 'id="session-meta"' web/index.html
 rg -q 'runtime_status' computer-mcp/internal/mcpserver/server.go
 rg -q 'GET /api/v1/events' desktop/control/api.py
+rg -q 'GET /api/v1/events/stream' desktop/control/api.py
+rg -q 'GET /metrics' desktop/control/api.py
+rg -q '/api/v1/recording' desktop/control/api.py
+rg -q '/api/v1/terminals' desktop/control/api.py
+rg -q 'record_screen' computer-mcp/internal/mcpserver/server.go
+rg -q 'Name:        "terminal"' computer-mcp/internal/mcpserver/server.go
+rg -q 'RELAY_STREAMING' compose.yaml
+rg -q 'location = /metrics' desktop/config/nginx.conf
+rg -q 'location /selkies/' desktop/config/nginx.conf
+rg -q 'id="start-recording"' web/index.html
+rg -q 'id="activity-log"' web/index.html
+rg -q 'EventSource\("/api/v1/events/stream"\)' web/app.js
 if rg -n 'TODO|\[TODO' desktop/home/.agents/skills/os-operator; then
   echo "unfinished OS operator skill scaffold found" >&2
   exit 1

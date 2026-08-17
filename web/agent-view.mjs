@@ -229,6 +229,22 @@ export function toolDisplay(name, rawInput) {
       release_control: "Release desktop control",
     })[action] || "Control desktop";
   }
+  if (normalized === "record_screen") {
+    return ({
+      START_RECORDING: "Start screen recording",
+      SAVE_RECORDING: "Save screen recording",
+      DISCARD_RECORDING: "Discard screen recording",
+    })[parseArguments(rawInput).mode] || "Record desktop";
+  }
+  if (normalized === "terminal") {
+    return ({
+      list: "List terminal sessions",
+      create: "Create terminal session",
+      capture: "Read terminal output",
+      send: "Send terminal input",
+      destroy: "Close terminal session",
+    })[parseArguments(rawInput).action] || "Operate terminal";
+  }
   const leaf = normalized.includes("__") ? normalized.split("__").at(-1) : normalized;
   return leaf
     ? leaf.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase())

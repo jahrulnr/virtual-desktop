@@ -50,6 +50,8 @@ RUN apt-get update \
         python3 \
         python3-pyatspi \
         scrot \
+        ffmpeg \
+        tmux \
         supervisor \
         thunar \
         websockify \
@@ -66,6 +68,18 @@ RUN apt-get update \
         xfwm4 \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+ARG INSTALL_SELKIES=false
+RUN if [ "$INSTALL_SELKIES" = "true" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends \
+        gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good \
+        gstreamer1.0-tools \
+        python3-pip \
+      && PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir selkies \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 RUN groupadd --gid 1000 desktop \
     && groupadd --gid 1001 relayapi \

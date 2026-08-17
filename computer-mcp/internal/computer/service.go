@@ -19,6 +19,25 @@ type Relay interface {
 	Cursor(context.Context) (relay.CursorPosition, error)
 	Release(context.Context, string) error
 	ControlState(context.Context) ([]byte, error)
+	StartRecording(context.Context) ([]byte, error)
+	StopRecording(context.Context, bool) ([]byte, error)
+	ListTerminals(context.Context) ([]byte, error)
+	CreateTerminal(context.Context, string, string) ([]byte, error)
+	TerminalCapture(context.Context, string) ([]byte, error)
+	TerminalSend(context.Context, string, string, bool) ([]byte, error)
+	DestroyTerminal(context.Context, string) ([]byte, error)
+}
+
+type RecordInput struct {
+	Mode string `json:"mode" jsonschema:"required,START_RECORDING, SAVE_RECORDING, or DISCARD_RECORDING"`
+}
+
+type TerminalInput struct {
+	Action string `json:"action" jsonschema:"required,list, create, capture, send, or destroy"`
+	Name   string `json:"name,omitempty" jsonschema:"terminal session name"`
+	Text   string `json:"text,omitempty" jsonschema:"text to send for send action"`
+	Cwd    string `json:"cwd,omitempty" jsonschema:"working directory for create action"`
+	Enter  bool   `json:"enter,omitempty" jsonschema:"press Enter after send action"`
 }
 
 type Input struct {
@@ -160,6 +179,80 @@ func (s *Service) RuntimeStatus(ctx context.Context) (json.RawMessage, error) {
 		return nil, fmt.Errorf("desktop returned invalid runtime JSON")
 	}
 	return data, nil
+}
+
+func (s *Service) RecordScreen(ctx context.Context, input RecordInput) (Result, error) {
+	switch input.Mode {
+	case "START_RECORDING":
+		data, err := s.relay.StartRecording(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: "Screen recording started. " + string(data)}, nil
+	case "SAVE_RECORDING":
+		data, err := s.relay.StopRecording(ctx, false)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: "Screen recording saved. " + string(data)}, nil
+	case "DISCARD_RECORDING":
+		data, err := s.relay.StopRecording(ctx, true)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: "Screen recording discarded. " + string(data)}, nil
+	default:
+		return Result{}, fmt.Errorf("mode must be START_RECORDING, SAVE_RECORDING, or DISCARD_RECORDING")
+	}
+}
+
+func (s *Service) Terminal(ctx context.Context, input TerminalInput) (Result, error) {
+	switch input.Action {
+	case "list":
+		data, err := s.relay.ListTerminals(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "create":
+		if input.Name == "" {
+			return Result{}, fmt.Errorf("name is required for create")
+		}
+		data, err := s.relay.CreateTerminal(ctx, input.Name, input.Cwd)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "capture":
+		if input.Name == "" {
+			return Result{}, fmt.Errorf("name is required for capture")
+		}
+		data, err := s.relay.TerminalCapture(ctx, input.Name)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "send":
+		if input.Name == "" || input.Text == "" {
+			return Result{}, fmt.Errorf("name and text are required for send")
+		}
+		data, err := s.relay.TerminalSend(ctx, input.Name, input.Text, input.Enter)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	case "destroy":
+		if input.Name == "" {
+			return Result{}, fmt.Errorf("name is required for destroy")
+		}
+		data, err := s.relay.DestroyTerminal(ctx, input.Name)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Text: string(data)}, nil
+	default:
+		return Result{}, fmt.Errorf("action must be list, create, capture, send, or destroy")
+	}
 }
 
 func (s *Service) waitWithLease(ctx context.Context, seconds float64) error {

@@ -29,6 +29,27 @@ func (f *fakeRelay) Release(context.Context, string) error                { retu
 func (f *fakeRelay) ControlState(context.Context) ([]byte, error) {
 	return []byte(`{"status":"ok"}`), nil
 }
+func (f *fakeRelay) StartRecording(context.Context) ([]byte, error) {
+	return []byte(`{"active":true}`), nil
+}
+func (f *fakeRelay) StopRecording(context.Context, bool) ([]byte, error) {
+	return []byte(`{"status":"saved"}`), nil
+}
+func (f *fakeRelay) ListTerminals(context.Context) ([]byte, error) {
+	return []byte(`{"sessions":[]}`), nil
+}
+func (f *fakeRelay) CreateTerminal(context.Context, string, string) ([]byte, error) {
+	return []byte(`{"name":"demo"}`), nil
+}
+func (f *fakeRelay) TerminalCapture(context.Context, string) ([]byte, error) {
+	return []byte(`{"output":"demo"}`), nil
+}
+func (f *fakeRelay) TerminalSend(context.Context, string, string, bool) ([]byte, error) {
+	return []byte(`{"bytesSent":1}`), nil
+}
+func (f *fakeRelay) DestroyTerminal(context.Context, string) ([]byte, error) {
+	return []byte(`{"status":"destroyed"}`), nil
+}
 
 func TestSmoothMouseMoveInterpolatesFromRealCursor(t *testing.T) {
 	backend := &fakeRelay{cursor: relay.CursorPosition{X: 0, Y: 0}}

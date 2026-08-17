@@ -29,6 +29,7 @@ services:
       RELAY_BASE_URL: "http://127.0.0.1:8080"
       RELAY_OPERATOR_TOKEN: "${CONTROL_TOKEN:-test-control-token}"
       RELAY_AGENT_ID: "coddy-agent"
+      RELAY_STREAMING: "${RELAY_STREAMING:-vnc}"
       OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"
