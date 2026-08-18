@@ -5,6 +5,7 @@ set -eu
 
 install -d -m 0710 -o desktop -g relayapi /run/user/1000
 install -d -m 0710 -o desktop -g relayapi /run/user/1000/at-spi
+install -d -m 0750 -o relayapi -g relayapi /run/user/1000/relay-tmux
 install -d -m 0750 -o root -g relayapi /run/ai-desktop
 install -d -m 0770 -o root -g relayaccess /run/relay-access
 install -d -m 0700 -o desktop -g desktop /run/relay-vnc

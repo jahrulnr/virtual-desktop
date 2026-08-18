@@ -59,9 +59,10 @@ rg -q '^COPY desktop/home/ /opt/relay/home-template/$' Dockerfile
 rg -q '/opt/relay/home-template' desktop/scripts/entrypoint.sh
 rg -q 'class="control-pill take-control"' web/index.html
 rg -q 'class="observer-shield"' web/index.html
-rg -qF 'aria-keyshortcuts="Alt+Shift+C"' web/index.html
-rg -q 'clipboardPasteFrom' web/app.js
+rg -qF 'Control+Enter Meta+Enter' web/index.html
+rg -q 'navigator.clipboard' web/app.js
 rg -q '/home/desktop/workspace' desktop/scripts/entrypoint.sh Dockerfile
+rg -q 'relay-tmux' desktop/scripts/entrypoint.sh
 rg -q '^directory=/home/desktop/workspace$' desktop/config/supervisord.conf
 rg -q 'aria-controls="control-drawer"' web/index.html
 rg -q 'aria-controls="agent-drawer"' web/index.html
@@ -80,9 +81,9 @@ rg -q 'id="shortcuts-dialog"' web/index.html
 rg -q 'id="new-agent-session"' web/index.html
 rg -q 'id="session-meta"' web/index.html
 rg -q 'runtime_status' computer-mcp/internal/mcpserver/server.go
-rg -q 'GET /api/v1/events' desktop/control/api.py
-rg -q 'GET /api/v1/events/stream' desktop/control/api.py
-rg -q 'GET /metrics' desktop/control/api.py
+rg -q 'path == "/api/v1/events"' desktop/control/api.py
+rg -q 'events/stream' desktop/control/api.py
+rg -q 'path == "/metrics"' desktop/control/api.py
 rg -q '/api/v1/recording' desktop/control/api.py
 rg -q '/api/v1/terminals' desktop/control/api.py
 rg -q 'record_screen' computer-mcp/internal/mcpserver/server.go
@@ -93,7 +94,7 @@ rg -q 'location /selkies/' desktop/config/nginx.conf
 rg -q 'id="start-recording"' web/index.html
 rg -q 'id="activity-log"' web/index.html
 rg -q 'EventSource\("/api/v1/events/stream"\)' web/app.js
-rg -q '--addr 127.0.0.1' desktop/scripts/start-selkies.sh
+rg -qF -- '--addr 127.0.0.1' desktop/scripts/start-selkies.sh
 rg -q 'connectSelkies' web/app.js
 rg -q 'RELAY_NATIVE_DISPLAY:-99' desktop/scripts/run-native.sh
 rg -q 'native-smoke' Makefile
