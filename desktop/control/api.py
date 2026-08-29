@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import tempfile
@@ -131,10 +132,25 @@ class Response:
     status: int
     body: bytes = b""
     content_type: str = "application/json; charset=utf-8"
+    file_path: str | None = None
+    file_name: str | None = None
 
 
 def json_response(status: int, value: object) -> Response:
     return Response(status, json.dumps(value, separators=(",", ":")).encode("utf-8"))
+
+
+RECORDING_NAME = re.compile(r"^relay-\d{8}-\d{6}\.mp4$")
+
+
+def file_response(path: Path) -> Response:
+    """Serve a recording file as a streamed download response."""
+    return Response(
+        status=200,
+        content_type="video/mp4",
+        file_path=str(path),
+        file_name=path.name,
+    )
 
 
 class ControlApplication:
@@ -244,6 +260,18 @@ class ControlApplication:
             if not self._authorized(headers):
                 return self._unauthorized()
             return json_response(200, self.recorder.state().as_dict())
+
+        if method == "GET" and path.startswith("/api/v1/recordings/") and not path.endswith("/"):
+            if not self._operator_request(headers):
+                return self._unauthorized()
+            name = path[len("/api/v1/recordings/"):]
+            if not RECORDING_NAME.fullmatch(name):
+                return self._error(422, "VALIDATION_ERROR", "recording name must match relay-YYYYMMDD-HHMMSS.mp4")
+            directory = Path(getattr(self.recorder, "output_dir", None) or self.recorder.OUTPUT_DIR)
+            target = (directory / name).resolve()
+            if target.parent != directory.resolve() or not target.is_file():
+                return self._error(404, "NOT_FOUND", "recording not found")
+            return file_response(target)
 
         if method == "GET" and path == "/api/v1/terminals":
             if not self._authorized(headers):
@@ -465,6 +493,18 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
     def _write(self, response: Response) -> None:
         self.send_response(response.status)
         self.send_header("Content-Type", response.content_type)
+        if response.file_path is not None and response.file_name:
+            size = os.path.getsize(response.file_path)
+            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Disposition", f'attachment; filename="{response.file_name}"')
+            self.send_header("Accept-Ranges", "none")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            with open(response.file_path, "rb") as media:
+                while chunk := media.read(64 * 1024):
+                    self.wfile.write(chunk)
+            return
         self.send_header("Content-Length", str(len(response.body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")

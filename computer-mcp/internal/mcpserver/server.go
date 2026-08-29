@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 
@@ -93,4 +94,29 @@ func NewHTTPHandler(service *computer.Service) http.Handler {
 			MaxRequestBodyBytes: 256 << 10,
 		},
 	)
+}
+
+// BearerAuth wraps a handler and requires a constant-time bearer-token match.
+// It guards the external MCP listener; the internal Coddy listener stays
+// token-free so the pinned Coddy configuration keeps working.
+func BearerAuth(next http.Handler, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		supplied := r.Header.Get("Authorization")
+		expected := "Bearer " + token
+		if subtle.ConstantTimeCompare([]byte(supplied), []byte(expected)) != 1 {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"code":"UNAUTHORIZED","message":"valid MCP bearer token required"}}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// NewExternalHTTPHandler exposes the MCP surface over Streamable HTTP with a
+// required bearer token. It is the handler for the external listener that is
+// reachable from outside the desktop container.
+func NewExternalHTTPHandler(service *computer.Service, token string) http.Handler {
+	return BearerAuth(NewHTTPHandler(service), token)
 }

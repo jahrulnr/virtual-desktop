@@ -37,6 +37,39 @@ func main() {
 		IdleTimeout:       2 * time.Minute,
 	}
 	log.Printf("relay computer MCP listening on %s", httpServer.Addr)
+
+	// Optional external listener for agents outside the desktop container.
+	// It requires its own bearer token and never shares the internal,
+	// token-free listener used by the pinned Coddy configuration.
+	if external := os.Getenv("RELAY_MCP_EXTERNAL_LISTEN"); external != "" {
+		token := os.Getenv("RELAY_MCP_TOKEN")
+		if len(token) < 16 {
+			log.Fatal("RELAY_MCP_EXTERNAL_LISTEN requires RELAY_MCP_TOKEN of at least 16 characters")
+		}
+		externalMux := http.NewServeMux()
+		externalMux.Handle("GET /healthz", mcpserver.BearerAuth(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			}), token))
+		externalMux.Handle("/mcp", mcpserver.NewExternalHTTPHandler(service, token))
+		externalServer := &http.Server{
+			Addr:              external,
+			Handler:           externalMux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      2 * time.Minute,
+			IdleTimeout:       2 * time.Minute,
+		}
+		log.Printf("relay computer MCP external listener on %s (bearer token required)", external)
+		go func() {
+			if err := externalServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+		}()
+	}
+
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

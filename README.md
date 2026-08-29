@@ -112,6 +112,13 @@ Coddy handles model, session, and tool orchestration while the small Go MCP
 process owns the stable computer-use contract. Both run in the desktop container,
 so there is one lifecycle to operate while the code boundary remains replaceable.
 
+The same MCP server also publishes a second, bearer-token listener at
+`127.0.0.1:8091` so agents outside the container (an editor assistant, another
+orchestrator, NusaShell) can operate the desktop with the same tools. Set
+`MCP_AUTH_TOKEN` in `.env`; the external listener refuses to start without a
+token of at least 16 characters. The token-free internal listener keeps the
+pinned Coddy configuration unchanged. See [the API reference](docs/API.md).
+
 The image installs the agent skill at
 `/home/desktop/.agents/skills/os-operator`. Its helper wraps lease management,
 screenshots, accessibility, input, and approved installs:

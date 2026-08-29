@@ -16,12 +16,12 @@ class ScreenRecorderTests(unittest.TestCase):
 
     def test_start_and_stop_saves_file(self):
         recorder = ScreenRecorder(width=800, height=600)
+        recorder.output_dir = self.output_dir
         process = MagicMock()
         process.poll.return_value = None
         output_path = self.output_dir / "relay-test.mp4"
         output_path.write_bytes(b"x" * 128)
         with (
-            patch.object(ScreenRecorder, "OUTPUT_DIR", self.output_dir),
             patch("desktop.control.recording.subprocess.Popen", return_value=process) as popen,
             patch("desktop.control.recording.time.strftime", return_value="test"),
         ):
@@ -34,10 +34,10 @@ class ScreenRecorderTests(unittest.TestCase):
 
     def test_start_while_active_raises_conflict(self):
         recorder = ScreenRecorder(width=800, height=600)
+        recorder.output_dir = self.output_dir
         process = MagicMock()
         process.poll.return_value = None
         with (
-            patch.object(ScreenRecorder, "OUTPUT_DIR", self.output_dir),
             patch("desktop.control.recording.subprocess.Popen", return_value=process),
             patch("desktop.control.recording.time.strftime", return_value="test"),
         ):

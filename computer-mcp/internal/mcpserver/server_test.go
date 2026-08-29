@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 type fakeBackend struct{}
 
 func (fakeBackend) Apply(context.Context, string, []relay.Action) error { return nil }
-func (fakeBackend) Heartbeat(context.Context, string) error               { return nil }
+func (fakeBackend) Heartbeat(context.Context, string) error             { return nil }
 func (fakeBackend) Screenshot(context.Context) ([]byte, error) {
 	return []byte("\x89PNG\r\n\x1a\nimage"), nil
 }
@@ -134,4 +135,67 @@ func TestHTTPTransportIsStateless(t *testing.T) {
 			t.Fatalf("content length = %d", len(result.Content))
 		}
 	}
+}
+
+func TestExternalHandlerRejectsMissingOrWrongToken(t *testing.T) {
+	handler := NewExternalHTTPHandler(computer.NewService(fakeBackend{}, "external-test"), "secret-token-0123456789")
+
+	for _, header := range []string{"", "Bearer wrong-token", "secret-token-0123456789", "Basic secret-token-0123456789"} {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("Authorization %q returned %d, want 401", header, recorder.Code)
+		}
+		if recorder.Body.String() != `{"error":{"code":"UNAUTHORIZED","message":"valid MCP bearer token required"}}` {
+			t.Fatalf("body = %q", recorder.Body.String())
+		}
+	}
+}
+
+func TestExternalHandlerAcceptsValidToken(t *testing.T) {
+	ctx := context.Background()
+	httpServer := httptest.NewServer(NewExternalHTTPHandler(computer.NewService(fakeBackend{}, "external-test"), "secret-token-0123456789"))
+	defer httpServer.Close()
+
+	transport := &mcp.StreamableClientTransport{Endpoint: httpServer.URL}
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1"}, nil)
+
+	// Without a token the handshake must fail with 401.
+	if _, err := client.Connect(ctx, transport, nil); err == nil {
+		t.Fatal("connection without a token unexpectedly succeeded")
+	}
+
+	authorized := mcp.StreamableClientTransport{Endpoint: httpServer.URL}
+	authorized.HTTPClient = &http.Client{Transport: bearerTransport{token: "secret-token-0123456789"}}
+	session, err := client.Connect(ctx, &authorized, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "runtime_status",
+		Arguments: map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("content length = %d", len(result.Content))
+	}
+}
+
+// bearerTransport adds the Authorization header to every request.
+type bearerTransport struct {
+	token string
+}
+
+func (b bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.Header.Set("Authorization", "Bearer "+b.token)
+	return http.DefaultTransport.RoundTrip(clone)
 }

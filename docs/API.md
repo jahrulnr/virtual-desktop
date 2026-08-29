@@ -107,6 +107,10 @@ group-writable permissions for the control API). Saved files are capped at
   returns `{status:"saved", path, sizeBytes, durationMs}`.
 - `POST /api/v1/recording/discard` — bearer token or human capability; stops without
   saving and returns `{status:"discarded"}`.
+- `GET /api/v1/recordings/{name}` — bearer token or human capability; streams one
+  saved MP4. `name` must match `relay-YYYYMMDD-HHMMSS.mp4`; anything else returns
+  422 and a missing file returns 404. The response is `video/mp4` with
+  `Content-Disposition: attachment`.
 
 Only one recording may be active at a time. Conflicts return 409.
 
@@ -137,6 +141,41 @@ credential. The server exposes:
 - `record_screen` with modes `START_RECORDING`, `SAVE_RECORDING`, and
   `DISCARD_RECORDING`;
 - `terminal` with actions `list`, `create`, `capture`, `send`, and `destroy`.
+
+### External agents
+
+Agents outside the desktop container reach the same server through a second,
+token-authenticated listener published by Compose at `http://127.0.0.1:8091/mcp`.
+It uses the same stateless Streamable HTTP transport and accepts a bearer token:
+
+```http
+POST /mcp HTTP/1.1
+Authorization: Bearer <MCP_AUTH_TOKEN>
+```
+
+Requests without a valid token return 401 with the standard error envelope. The
+token comes from `MCP_AUTH_TOKEN` in `.env` and must contain at least 16
+characters; the container refuses to start the external listener otherwise. The
+internal loopback listener stays token-free so the pinned Coddy configuration
+keeps working unchanged.
+
+Recorded MP4s are not returned through MCP; external agents download them from
+`GET /api/v1/recordings/{name}` on the shared origin using the operator token
+(`CONTROL_TOKEN`) after `record_screen` reports the saved path.
+
+Example client config for an external agent:
+
+```json
+{
+  "mcpServers": {
+    "relay": {
+      "type": "http",
+      "url": "http://127.0.0.1:8091/mcp",
+      "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
+    }
+  }
+}
+```
 
 Screenshot results contain a real MCP `image` content block. Pointer-targeted
 actions accept `[x,y]` in the 1440×900 framebuffer, or omit `coordinate` to act

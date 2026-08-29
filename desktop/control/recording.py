@@ -43,6 +43,7 @@ class ScreenRecorder:
         self.display = display or os.environ.get("DISPLAY", ":0")
         self.width = width
         self.height = height
+        self.output_dir = Path(os.environ.get("RELAY_RECORDING_DIR", str(self.OUTPUT_DIR)))
         self._lock = threading.RLock()
         self._process: subprocess.Popen[bytes] | None = None
         self._started_at = 0.0
@@ -63,9 +64,9 @@ class ScreenRecorder:
             self._cleanup_finished()
             if self._process is not None and self._process.poll() is None:
                 raise RecordingConflictError("a recording is already active")
-            self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
             filename = time.strftime("relay-%Y%m%d-%H%M%S.mp4")
-            output_path = self.OUTPUT_DIR / filename
+            output_path = self.output_dir / filename
             command = [
                 "ffmpeg",
                 "-hide_banner",

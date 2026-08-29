@@ -8,6 +8,8 @@ services:
     init: true
     ports:
       - "127.0.0.1:3000:8080"
+      # External bearer-token MCP listener for agents outside the container.
+      - "127.0.0.1:8091:8091"
     shm_size: "1gb"
     # Chromium/Electron create nested sandbox namespaces that Docker's default
     # seccomp profile blocks.
@@ -30,6 +32,10 @@ services:
       RELAY_OPERATOR_TOKEN: "${CONTROL_TOKEN:-test-control-token}"
       RELAY_AGENT_ID: "coddy-agent"
       RELAY_STREAMING: "${RELAY_STREAMING:-vnc}"
+      # External MCP listener (127.0.0.1:8091) for agents outside the
+      # container. Requires a token of at least 16 characters.
+      RELAY_MCP_EXTERNAL_LISTEN: "0.0.0.0:8091"
+      RELAY_MCP_TOKEN: "${MCP_AUTH_TOKEN:-test-mcp-auth-token-change-me}"
       OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"

@@ -13,8 +13,6 @@ install -d -m 1777 -o root -g root /tmp/.X11-unix
 install -d -m 0700 -o root -g root /var/lib/relay
 install -d -m 0700 -o coddy -g coddy /var/lib/coddy
 install -d -m 0755 -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop /home/desktop/workspace
-# control-api runs as relayapi and writes screen recordings here.
-install -d -m 2770 -o desktop -g relayaccess /home/desktop/Downloads/recordings
 
 if [ ! -e /home/desktop/.relay-xfce-v1 ]; then
   cp -a /opt/relay/home-template/.config /home/desktop/
@@ -31,6 +29,15 @@ fi
 chown -R desktop:desktop /home/desktop
 chown -R coddy:coddy /var/lib/coddy
 chmod 2775 /home/desktop/workspace
+
+# control-api runs as relayapi (relayaccess) and writes screen recordings
+# here. Must run after the recursive home chown above, which would
+# otherwise reset the group ownership on every container start.
+install -d /home/desktop/Downloads/recordings
+chown desktop:relayaccess /home/desktop/Downloads/recordings
+chmod 2770 /home/desktop/Downloads/recordings
+chgrp relayaccess /home/desktop/Downloads
+chmod 0751 /home/desktop/Downloads
 if [ ! -L /workspace ]; then
   rm -rf /workspace
   ln -sfn /home/desktop/workspace /workspace

@@ -51,6 +51,12 @@ if rg -n -- '--privileged|pid: host|network_mode: host|/var/run/docker.sock|cap_
 fi
 
 rg -q '127.0.0.1:3000:8080' compose.yaml
+rg -q '127.0.0.1:8091:8091' compose.yaml
+rg -q 'RELAY_MCP_EXTERNAL_LISTEN: "0.0.0.0:8091"' compose.yaml
+rg -q 'MCP_AUTH_TOKEN' compose.yaml .env.example
+rg -q 'NewExternalHTTPHandler' computer-mcp/internal/mcpserver/server.go
+rg -q 'RELAY_MCP_EXTERNAL_LISTEN requires RELAY_MCP_TOKEN' computer-mcp/cmd/server/main.go
+rg -q 'RELAY_MCP_EXTERNAL_LISTEN requires RELAY_MCP_TOKEN' desktop/scripts/validate-config.sh
 rg -q 'Content-Security-Policy' desktop/config/nginx.conf
 rg -q 'X-Content-Type-Options' desktop/config/nginx.conf
 rg -Uq 'location ~ \\.mjs\$ \{[^}]*default_type application/javascript;' desktop/config/nginx.conf
@@ -64,7 +70,10 @@ rg -q 'navigator.clipboard' web/app.js
 rg -q '/home/desktop/workspace' desktop/scripts/entrypoint.sh Dockerfile
 rg -q 'relay-tmux' desktop/scripts/entrypoint.sh
 rg -q 'Downloads/recordings' desktop/scripts/entrypoint.sh
-rg -q '2770' desktop/scripts/entrypoint.sh
+rg -q 'chown desktop:relayaccess /home/desktop/Downloads/recordings' desktop/scripts/entrypoint.sh
+rg -q 'chmod 2770 /home/desktop/Downloads/recordings' desktop/scripts/entrypoint.sh
+rg -q 'chgrp relayaccess /home/desktop/Downloads' desktop/scripts/entrypoint.sh
+rg -q '0751' desktop/scripts/entrypoint.sh
 rg -q '^directory=/home/desktop/workspace$' desktop/config/supervisord.conf
 rg -q 'aria-controls="control-drawer"' web/index.html
 rg -q 'aria-controls="agent-drawer"' web/index.html
@@ -87,6 +96,9 @@ rg -q 'path == "/api/v1/events"' desktop/control/api.py
 rg -q 'events/stream' desktop/control/api.py
 rg -q 'path == "/metrics"' desktop/control/api.py
 rg -q '/api/v1/recording' desktop/control/api.py
+rg -q 'api/v1/recordings/' desktop/control/api.py
+rg -q 'RECORDING_NAME' desktop/control/api.py
+rg -q 'video/mp4' desktop/control/api.py
 rg -q '/api/v1/terminals' desktop/control/api.py
 rg -q 'record_screen' computer-mcp/internal/mcpserver/server.go
 rg -q 'Name:        "terminal"' computer-mcp/internal/mcpserver/server.go

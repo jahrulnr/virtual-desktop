@@ -23,6 +23,7 @@ browser -- HTTP/WebSocket --> nginx :8080
                                         and runtime-installed apps
 
 Coddy :12345 -- stateless MCP --> computer-mcp :8090 --> control API
+external agent -- bearer-token MCP --> computer-mcp :8091 --> control API
 ```
 
 Supervisor starts and watches every process in one image. Docker therefore has
@@ -35,6 +36,12 @@ The MCP server listens only on `127.0.0.1` and uses stateless Streamable HTTP.
 Coddy may reconnect or reuse a persisted conversation after `compose down` / `up`
 without carrying an expired transport session ID. This directly avoids the stale
 `session not found` failure that motivated the single-container rebuild.
+
+For agents outside the container, the same process opens an optional second
+listener on `0.0.0.0:8091` behind a constant-time bearer-token check. It exposes
+the identical tool surface; only the transport entry point differs. The token
+boundary keeps the desktop reachable to external orchestrators without giving
+unauthenticated host processes control of the session.
 
 ## Display and streaming
 
