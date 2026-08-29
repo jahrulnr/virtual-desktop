@@ -67,16 +67,27 @@ actions and returns 204:
     {"type":"move", "x":450, "y":260},
     {"type":"click", "button":"left", "count":1},
     {"type":"text", "text":"Hello"},
-    {"type":"key", "keys":["CTRL","L"]},
+    {"type":"key", "keys":["ctrl","L"]},
     {"type":"scroll", "direction":"down", "delta":3},
     {"type":"drag", "x":100, "y":100, "toX":500, "toY":320, "button":"left"},
     {"type":"button", "button":"left", "state":"down"},
     {"type":"button", "button":"left", "state":"up"},
-    {"type":"hold_key", "key":"SHIFT", "durationMs":500},
+    {"type":"hold_key", "key":"shift", "durationMs":500},
     {"type":"wait", "durationMs":250}
   ]
 }
 ```
+
+Key names are validated against an allowlist before anything runs: unknown
+names return 422 instead of reaching xdotool, which silently ignores them.
+Accept names are canonical X11 keysyms (`Return`, `Escape`, `BackSpace`,
+`Up`, `F1`…`F24`, `KP_0`…`KP_9`, single characters like `L` or `5`), the
+modifiers `ctrl`, `alt`, `shift`, `super` (any case), and LLM-friendly
+aliases that resolve to keysyms: `enter`/`return`→`Return`, `esc`→`Escape`,
+`backspace`→`BackSpace`, `delete`/`del`→`Delete`, `insert`/`ins`→`Insert`,
+`tab`→`Tab`, `pgup`/`pageup`→`Prior`, `pgdn`/`pgdown`→`Next`, arrows
+(`up`, `down`, `left`, `right`), `home`, `end`, `caps_lock`, `num_lock`,
+`print`, and `f1`…`f24`.
 
 Coordinates are absolute framebuffer pixels. Buttons are `left`, `middle`, or
 `right`; click count is 1–3; text is 1–4096 characters; a chord has 1–5 simple
@@ -86,7 +97,9 @@ amount is 1–10. Wait and held-key duration are bounded.
 ## Screen recording
 
 Recording uses FFmpeg x11grab and writes MP4 files under
-`/home/desktop/Downloads/recordings/`. Saved files are capped at 512 MiB.
+`/home/desktop/Downloads/recordings/` (created by the container entrypoint with
+group-writable permissions for the control API). Saved files are capped at
+512 MiB.
 
 - `GET /api/v1/recording` — bearer token; returns `{active, startedAtMs?, outputPath?}`.
 - `POST /api/v1/recording/start` — bearer token or human capability; starts capture.
@@ -100,7 +113,7 @@ Only one recording may be active at a time. Conflicts return 409.
 ## Terminals
 
 The tmux bridge exposes bounded shell sessions for agents. Session names match
-`^[a-z][a-z0-9-]{0,31}$`. Capture is limited to 200 lines and 64 KiB; input is
+`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`. Capture is limited to 200 lines and 64 KiB; input is
 limited to 4 KiB per request.
 
 - `GET /api/v1/terminals` — bearer token; lists active sessions.

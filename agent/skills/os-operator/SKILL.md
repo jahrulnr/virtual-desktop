@@ -28,8 +28,10 @@ Coordinates are framebuffer pixels in a 1440×900 desktop. `computer` accepts:
 `cursor_position`, `type`, `key`, `hold_key`, `scroll`, `wait`, and
 `release_control`. Pointer-targeted actions may omit `coordinate` to act at the
 current pointer. Key combinations use plus-separated xdotool names such as
-`ctrl+l` or `ctrl+shift+t`. `wait` holds the agent lease, so a human takeover
-cancels it.
+`ctrl+l` or `ctrl+shift+t`. `enter`, `esc`, `backspace`, `pgup`, and other
+common aliases resolve to canonical keysyms; unknown key names are rejected
+with an error instead of being silently ignored. `wait` holds the agent lease,
+so a human takeover cancels it.
 
 ## Grounding and recovery
 

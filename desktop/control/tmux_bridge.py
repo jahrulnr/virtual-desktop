@@ -163,9 +163,6 @@ class TmuxBridge:
             raise TerminalValidationError("session name must be 1-32 alphanumeric, dash, or underscore")
         if not text or len(text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise TerminalValidationError(f"text must contain between 1 and {MAX_INPUT_BYTES} bytes")
-        payload = text.replace("\\", "\\\\").replace('"', '\\"')
-        if enter:
-            payload += "\\r"
         self._run(
             [
                 "tmux",

@@ -170,3 +170,67 @@ func TestRejectsInvalidCoordinatesBeforeCallingDesktop(t *testing.T) {
 		t.Fatalf("claims = %d", backend.claims)
 	}
 }
+
+func TestKeyAliasesResolveToCanonicalKeysyms(t *testing.T) {
+	backend := &fakeRelay{}
+	service := NewService(backend, "coddy-session")
+
+	result, err := service.Execute(context.Background(), Input{Action: "key", Key: "ctrl+shift+t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "Pressed ctrl+shift+t." {
+		t.Fatalf("text = %q", result.Text)
+	}
+	last := backend.actions[len(backend.actions)-1]
+	if len(last.Keys) != 3 || last.Keys[0] != "ctrl" || last.Keys[1] != "shift" || last.Keys[2] != "t" {
+		t.Fatalf("keys = %v", last.Keys)
+	}
+}
+
+func TestNaturalKeyNamesResolveThroughAliases(t *testing.T) {
+	backend := &fakeRelay{}
+	service := NewService(backend, "coddy-session")
+
+	for _, input := range []struct {
+		sent  string
+		want  string
+	}{
+		{"enter", "Return"},
+		{"Enter", "Return"},
+		{"esc", "Escape"},
+		{"pgup", "Prior"},
+		{"backspace", "BackSpace"},
+		{"f5", "F5"},
+	} {
+		_, err := service.Execute(context.Background(), Input{Action: "key", Key: input.sent})
+		if err != nil {
+			t.Fatalf("key %q: %v", input.sent, err)
+		}
+		last := backend.actions[len(backend.actions)-1]
+		if len(last.Keys) != 1 || last.Keys[0] != input.want {
+			t.Fatalf("key %q resolved to %v, want %q", input.sent, last.Keys, input.want)
+		}
+	}
+}
+
+func TestRejectsUnknownKeysymNames(t *testing.T) {
+	backend := &fakeRelay{}
+	service := NewService(backend, "coddy-session")
+
+	// xdotool exits 0 for unknown key names; the service must reject them
+	// up front so agents cannot be told a keypress succeeded silently.
+	for _, bad := range []string{"enterx", "Hyper_L", "NonExistentKey"} {
+		_, err := service.Execute(context.Background(), Input{Action: "key", Key: bad})
+		if err == nil {
+			t.Fatalf("key %q unexpectedly accepted", bad)
+		}
+	}
+	_, err := service.Execute(context.Background(), Input{Action: "hold_key", Key: "fake_key", Duration: 0.5})
+	if err == nil {
+		t.Fatal("hold_key with an unknown name unexpectedly accepted")
+	}
+	if len(backend.actions) != 0 {
+		t.Fatalf("actions = %+v", backend.actions)
+	}
+}

@@ -360,6 +360,103 @@ func coordinate(value []int, name string) ([2]int, error) {
 	return [2]int{value[0], value[1]}, nil
 }
 
+// keyAliases maps common LLM-friendly key names to canonical X11 keysyms.
+var keyAliases = map[string]string{
+	"enter":        "Return",
+	"return":       "Return",
+	"kp_enter":     "KP_Enter",
+	"esc":          "Escape",
+	"escape":       "Escape",
+	"backspace":    "BackSpace",
+	"delete":       "Delete",
+	"del":          "Delete",
+	"insert":       "Insert",
+	"ins":          "Insert",
+	"tab":          "Tab",
+	"space":        "space",
+	"pgup":         "Prior",
+	"pageup":       "Prior",
+	"prior":        "Prior",
+	"pgdn":         "Next",
+	"pgdown":       "Next",
+	"home":         "Home",
+	"end":          "End",
+	"up":           "Up",
+	"down":         "Down",
+	"left":         "Left",
+	"right":        "Right",
+	"caps_lock":    "Caps_Lock",
+	"capslock":     "Caps_Lock",
+	"num_lock":     "Num_Lock",
+	"numlock":      "Num_Lock",
+	"scroll_lock":  "Scroll_Lock",
+	"print":        "Print",
+	"printscreen":  "Print",
+	"prtsc":        "Print",
+	"pause":        "Pause",
+	"menu":         "Menu",
+	"ctrl":         "ctrl",
+	"alt":          "alt",
+	"shift":        "shift",
+	"super":        "super",
+	"meta":         "super",
+}
+
+// keyModifiers are accepted in any case and passed to xdotool lowercase,
+// which resolves both forms.
+var keyModifiers = map[string]bool{
+	"ctrl":  true,
+	"alt":   true,
+	"shift": true,
+	"super": true,
+}
+
+// keySymbols is the allowlist of canonical keysyms verified against the
+// container's xdotool build. Single alphanumeric characters are also
+// valid printable keysyms and are accepted separately.
+var keySymbols = map[string]bool{
+	"Return": true, "KP_Enter": true, "Escape": true, "BackSpace": true,
+	"Delete": true, "Insert": true, "Tab": true, "space": true,
+	"Prior": true, "Next": true, "Home": true, "End": true,
+	"Up": true, "Down": true, "Left": true, "Right": true,
+	"Caps_Lock": true, "Num_Lock": true, "Scroll_Lock": true,
+	"Print": true, "Pause": true, "Menu": true,
+	"shift_r": true, "control_r": true, "alt_r": true, "super_r": true,
+	"F1": true, "F2": true, "F3": true, "F4": true, "F5": true, "F6": true,
+	"F7": true, "F8": true, "F9": true, "F10": true, "F11": true, "F12": true,
+	"F13": true, "F14": true, "F15": true, "F16": true, "F17": true, "F18": true,
+	"F19": true, "F20": true, "F21": true, "F22": true, "F23": true, "F24": true,
+	"KP_Add": true, "KP_Subtract": true, "KP_Multiply": true, "KP_Divide": true,
+	"KP_0": true, "KP_1": true, "KP_2": true, "KP_3": true, "KP_4": true,
+	"KP_5": true, "KP_6": true, "KP_7": true, "KP_8": true, "KP_9": true,
+}
+
+// keyName resolves one plus-separated key name to a canonical keysym.
+func keyName(value string) (string, error) {
+	for _, character := range value {
+		if !(character >= 'a' && character <= 'z') && !(character >= 'A' && character <= 'Z') && !(character >= '0' && character <= '9') && character != '_' {
+			return "", fmt.Errorf("key names may contain only letters, numbers, and underscore")
+		}
+	}
+	lowered := strings.ToLower(value)
+	if keyModifiers[lowered] {
+		return lowered, nil
+	}
+	if alias, ok := keyAliases[lowered]; ok {
+		return alias, nil
+	}
+	for symbol := range keySymbols {
+		if strings.ToLower(symbol) == lowered {
+			return symbol, nil
+		}
+	}
+	if len(value) == 1 {
+		// Single characters are printable keysyms (a, L, 5).
+		return value, nil
+	}
+	return "", fmt.Errorf("unknown key name %q; use canonical keysyms (Return, Escape, BackSpace, Up) or aliases (enter, esc, backspace, arrows)", value)
+}
+
 func keys(value string) ([]string, error) {
 	parts := strings.Split(value, "+")
 	if len(parts) < 1 || len(parts) > 5 {
@@ -370,12 +467,11 @@ func keys(value string) ([]string, error) {
 		if part == "" {
 			return nil, fmt.Errorf("key contains an empty name")
 		}
-		for _, character := range part {
-			if !(character >= 'a' && character <= 'z') && !(character >= 'A' && character <= 'Z') && !(character >= '0' && character <= '9') && character != '_' {
-				return nil, fmt.Errorf("key names may contain only letters, numbers, and underscore")
-			}
+		resolved, err := keyName(part)
+		if err != nil {
+			return nil, err
 		}
-		parts[index] = strings.ToUpper(part)
+		parts[index] = resolved
 	}
 	return parts, nil
 }

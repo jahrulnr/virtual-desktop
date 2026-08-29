@@ -42,7 +42,7 @@ class InputControllerTests(unittest.TestCase):
                 {"type": "move", "x": 120, "y": 240},
                 {"type": "click", "button": "left"},
                 {"type": "text", "text": "hello; $(touch /tmp/nope)"},
-                {"type": "key", "keys": ["CTRL", "L"]},
+                {"type": "key", "keys": ["ctrl", "L"]},
             ],
         )
 
@@ -60,7 +60,7 @@ class InputControllerTests(unittest.TestCase):
                     "--",
                     "hello; $(touch /tmp/nope)",
                 ],
-                ["xdotool", "key", "--clearmodifiers", "CTRL+L"],
+                ["xdotool", "key", "--clearmodifiers", "ctrl+L"],
             ],
         )
 
@@ -74,11 +74,96 @@ class InputControllerTests(unittest.TestCase):
                 "agent-1",
                 [
                     {"type": "click", "button": "left"},
-                    {"type": "key", "keys": ["CTRL", "Not A Key!"]},
+                    {"type": "key", "keys": ["ctrl", "Not_A_Key_XYZ"]},
                 ],
             )
 
         self.assertEqual(self.runner.commands, [])
+
+    def test_rejects_invalid_keysym_names_despite_xdotool_silence(self):
+        # xdotool exits 0 for unknown key names; the controller must not
+        # trust that and reject invalid names up front.
+        for bad in ("enterx", "Hyper_L", "NonExistentKey", "pg upp"):
+            with self.assertRaises(ValidationError):
+                self.controller.apply(
+                    "agent-1",
+                    [{"type": "key", "keys": [bad]}],
+                )
+        with self.assertRaises(ValidationError):
+            self.controller.apply(
+                "agent-1",
+                [{"type": "hold_key", "key": "fake_key", "durationMs": 250}],
+            )
+        self.assertEqual(self.runner.commands, [])
+
+    def test_accepts_common_natural_key_names(self):
+        # The very names an LLM is most likely to send must all work:
+        # "Enter" resolves through the alias table to the Return keysym.
+        self.controller.apply(
+            "agent-1",
+            [
+                {"type": "key", "keys": ["Enter"]},
+                {"type": "key", "keys": ["Tab"]},
+                {"type": "key", "keys": ["Escape"]},
+            ],
+        )
+
+        self.assertEqual(
+            self.runner.commands,
+            [
+                ["xdotool", "key", "--clearmodifiers", "Return"],
+                ["xdotool", "key", "--clearmodifiers", "Tab"],
+                ["xdotool", "key", "--clearmodifiers", "Escape"],
+            ],
+        )
+
+    def test_resolves_llm_friendly_key_aliases_to_canonical_keysyms(self):
+        self.controller.apply(
+            "agent-1",
+            [
+                {"type": "key", "keys": ["enter"]},
+                {"type": "key", "keys": ["esc"]},
+                {"type": "key", "keys": ["ctrl", "L"]},
+                {"type": "key", "keys": ["pgup"]},
+                {"type": "key", "keys": ["shift", "insert"]},
+                {"type": "hold_key", "key": "backspace", "durationMs": 100},
+            ],
+        )
+
+        self.assertEqual(
+            self.runner.commands,
+            [
+                ["xdotool", "key", "--clearmodifiers", "Return"],
+                ["xdotool", "key", "--clearmodifiers", "Escape"],
+                ["xdotool", "key", "--clearmodifiers", "ctrl+L"],
+                ["xdotool", "key", "--clearmodifiers", "Prior"],
+                ["xdotool", "key", "--clearmodifiers", "shift+Insert"],
+                ["xdotool", "keydown", "BackSpace", "sleep", "0.100", "keyup", "BackSpace"],
+            ],
+        )
+
+    def test_accepts_canonical_keysyms_case_insensitively(self):
+        self.controller.apply(
+            "agent-1",
+            [
+                {"type": "key", "keys": ["Return"]},
+                {"type": "key", "keys": ["return"]},
+                {"type": "key", "keys": ["KP_Enter"]},
+                {"type": "key", "keys": ["f5"]},
+                {"type": "key", "keys": ["caps_lock"]},
+            ],
+        )
+
+        self.assertEqual(
+            self.runner.commands,
+            [
+                ["xdotool", "key", "--clearmodifiers", "Return"],
+                ["xdotool", "key", "--clearmodifiers", "Return"],
+                ["xdotool", "key", "--clearmodifiers", "KP_Enter"],
+                ["xdotool", "key", "--clearmodifiers", "F5"],
+                ["xdotool", "key", "--clearmodifiers", "Caps_Lock"],
+            ],
+        )
 
     def test_rejects_more_than_fifty_actions(self):
         actions = [{"type": "click", "button": "left"}] * 51
@@ -93,7 +178,7 @@ class InputControllerTests(unittest.TestCase):
                 {"type": "drag", "x": 40, "y": 50, "toX": 400, "toY": 500},
                 {"type": "button", "button": "left", "state": "down"},
                 {"type": "button", "button": "left", "state": "up"},
-                {"type": "hold_key", "key": "ALT", "durationMs": 250},
+                {"type": "hold_key", "key": "alt", "durationMs": 250},
                 {"type": "wait", "durationMs": 125},
             ],
         )
@@ -116,7 +201,7 @@ class InputControllerTests(unittest.TestCase):
                 ],
                 ["xdotool", "mousedown", "1"],
                 ["xdotool", "mouseup", "1"],
-                ["xdotool", "keydown", "ALT", "sleep", "0.250", "keyup", "ALT"],
+                ["xdotool", "keydown", "alt", "sleep", "0.250", "keyup", "alt"],
                 ["xdotool", "sleep", "0.125"],
             ],
         )
@@ -127,7 +212,7 @@ class InputControllerTests(unittest.TestCase):
                 "agent-1",
                 [
                     {"type": "button", "button": "left", "state": "down"},
-                    {"type": "hold_key", "key": "ALT;touch", "durationMs": 10},
+                    {"type": "hold_key", "key": "alt;touch", "durationMs": 10},
                 ],
             )
 
@@ -195,7 +280,7 @@ class InputControllerTests(unittest.TestCase):
         class InFlightRunner(RecordingRunner):
             def run(self, command, cancelled=None):
                 super().run(command, cancelled)
-                if command[:3] == ["xdotool", "keydown", "ALT"]:
+                if command[:3] == ["xdotool", "keydown", "alt"]:
                     lease.claim_human("browser-1")
                     controller.preempt()
                     raise ConflictError("preempted")
@@ -206,10 +291,10 @@ class InputControllerTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             controller.apply(
                 "agent-1",
-                [{"type": "hold_key", "key": "ALT", "durationMs": 10_000}],
+                [{"type": "hold_key", "key": "alt", "durationMs": 10_000}],
             )
 
-        self.assertIn(["xdotool", "keyup", "ALT"], runner.commands)
+        self.assertIn(["xdotool", "keyup", "alt"], runner.commands)
         self.assertEqual(runner.cancel_calls, 1)
 
     def test_drag_does_not_use_sync_for_same_position(self):

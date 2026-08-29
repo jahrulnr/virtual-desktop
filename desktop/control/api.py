@@ -9,6 +9,7 @@ import os
 import socket
 import subprocess
 import tempfile
+import traceback
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -194,9 +195,11 @@ class ControlApplication:
             return self._error(503, "DEPENDENCY_UNAVAILABLE", str(error))
         except TerminalValidationError as error:
             return self._error(422, "VALIDATION_ERROR", str(error))
-        except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as error:
+            print(f"control-api: dependency failure: {error}", flush=True)
             return self._error(503, "DEPENDENCY_UNAVAILABLE", "desktop dependency failed")
         except Exception:
+            traceback.print_exc()
             return self._error(500, "INTERNAL_ERROR", "control service failed")
 
     def _dispatch(

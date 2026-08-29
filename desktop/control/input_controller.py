@@ -68,6 +68,63 @@ class InputController:
     BUTTONS = {"left": "1", "middle": "2", "right": "3"}
     KEY_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 
+    # Canonical X11 keysyms xdotool accepts. Names outside this map (after
+    # alias resolution) are rejected instead of being silently ignored by
+    # xdotool, which exits 0 for unknown key names.
+    KEY_ALIASES = {
+        "enter": "Return",
+        "return": "Return",
+        "kp_enter": "KP_Enter",
+        "esc": "Escape",
+        "escape": "Escape",
+        "backspace": "BackSpace",
+        "delete": "Delete",
+        "del": "Delete",
+        "insert": "Insert",
+        "ins": "Insert",
+        "tab": "Tab",
+        "space": "space",
+        "pgup": "Prior",
+        "pageup": "Prior",
+        "prior": "Prior",
+        "pgdn": "Next",
+        "pgdown": "Next",
+        "next": "Next",
+        "home": "Home",
+        "end": "End",
+        "up": "Up",
+        "down": "Down",
+        "left": "Left",
+        "right": "Right",
+        "caps_lock": "Caps_Lock",
+        "capslock": "Caps_Lock",
+        "num_lock": "Num_Lock",
+        "numlock": "Num_Lock",
+        "scroll_lock": "Scroll_Lock",
+        "print": "Print",
+        "printscreen": "Print",
+        "prtsc": "Print",
+        "pause": "Pause",
+        "menu": "Menu",
+    }
+    MODIFIERS = {"ctrl", "alt", "shift", "super", "meta"}
+    # Verified against the container's xdotool build.
+    KEY_SYMBOLS = {
+        *KEY_ALIASES.values(),
+        "shift_r",
+        "control_r",
+        "alt_r",
+        "super_r",
+        "meta_r",
+        "F1", "F2", "F3", "F4", "F5", "F6",
+        "F7", "F8", "F9", "F10", "F11", "F12",
+        "F13", "F14", "F15", "F16", "F17", "F18",
+        "F19", "F20", "F21", "F22", "F23", "F24",
+        "KP_Add", "KP_Subtract", "KP_Multiply", "KP_Divide",
+        "KP_0", "KP_1", "KP_2", "KP_3", "KP_4",
+        "KP_5", "KP_6", "KP_7", "KP_8", "KP_9",
+    }
+
     def __init__(
         self,
         *,
@@ -249,9 +306,8 @@ class InputController:
         keys = action.get("keys")
         if not isinstance(keys, list) or not 1 <= len(keys) <= 5:
             raise ValidationError("keys must contain between 1 and 5 names")
-        if not all(isinstance(key, str) and self.KEY_PATTERN.fullmatch(key) for key in keys):
-            raise ValidationError("key names may contain only letters, numbers, and underscore")
-        return ["xdotool", "key", "--clearmodifiers", "+".join(keys)]
+        resolved = [self._key_name(name, "key") for name in keys]
+        return ["xdotool", "key", "--clearmodifiers", "+".join(resolved)]
 
     def _scroll(self, action: dict[object, object]) -> list[str]:
         delta = action.get("delta")
@@ -297,8 +353,9 @@ class InputController:
 
     def _hold_key(self, action: dict[object, object]) -> list[str]:
         key = action.get("key")
-        if not isinstance(key, str) or not self.KEY_PATTERN.fullmatch(key):
-            raise ValidationError("key may contain only letters, numbers, and underscore")
+        if not isinstance(key, str):
+            raise ValidationError("key is required for hold_key")
+        resolved = self._key_name(key, "hold_key")
         duration = action.get("durationMs")
         if (
             isinstance(duration, bool)
@@ -307,7 +364,37 @@ class InputController:
         ):
             raise ValidationError("durationMs must be between 1 and 10000")
         seconds = f"{duration / 1000:.3f}"
-        return ["xdotool", "keydown", key, "sleep", seconds, "keyup", key]
+        return ["xdotool", "keydown", resolved, "sleep", seconds, "keyup", resolved]
+
+    @classmethod
+    def _key_name(cls, value: object, action: str) -> str:
+        """Resolve one key name to a canonical xdotool keysym.
+
+        Accepts LLM-friendly aliases (enter, esc, pgup, ctrl, ...) and the
+        canonical X11 keysym (Return, Escape, Prior, ctrl, ...). Unknown
+        names raise instead of reaching xdotool, which silently ignores
+        invalid key names while still exiting 0.
+        """
+        if not isinstance(value, str) or not cls.KEY_PATTERN.fullmatch(value):
+            raise ValidationError(
+                f"{action} key names may contain only letters, numbers, and underscore"
+            )
+        lowered = value.lower()
+        if lowered in cls.MODIFIERS:
+            return lowered
+        if lowered in cls.KEY_ALIASES:
+            return cls.KEY_ALIASES[lowered]
+        for symbol in cls.KEY_SYMBOLS:
+            if symbol.lower() == lowered:
+                return symbol
+        if len(value) == 1 and value.isalnum():
+            # Single characters are printable keysyms (a, L, 5); xdotool
+            # resolves them directly.
+            return value
+        raise ValidationError(
+            f"unknown key name {value!r}; use canonical keysyms "
+            f"(Return, Escape, BackSpace, Up) or aliases (enter, esc, backspace, arrows)"
+        )
 
     @staticmethod
     def _wait(action: dict[object, object]) -> list[str]:

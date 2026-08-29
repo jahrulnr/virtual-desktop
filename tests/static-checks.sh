@@ -63,6 +63,8 @@ rg -qF 'Control+Enter Meta+Enter' web/index.html
 rg -q 'navigator.clipboard' web/app.js
 rg -q '/home/desktop/workspace' desktop/scripts/entrypoint.sh Dockerfile
 rg -q 'relay-tmux' desktop/scripts/entrypoint.sh
+rg -q 'Downloads/recordings' desktop/scripts/entrypoint.sh
+rg -q '2770' desktop/scripts/entrypoint.sh
 rg -q '^directory=/home/desktop/workspace$' desktop/config/supervisord.conf
 rg -q 'aria-controls="control-drawer"' web/index.html
 rg -q 'aria-controls="agent-drawer"' web/index.html

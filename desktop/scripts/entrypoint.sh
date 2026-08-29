@@ -13,6 +13,8 @@ install -d -m 1777 -o root -g root /tmp/.X11-unix
 install -d -m 0700 -o root -g root /var/lib/relay
 install -d -m 0700 -o coddy -g coddy /var/lib/coddy
 install -d -m 0755 -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop /home/desktop/workspace
+# control-api runs as relayapi and writes screen recordings here.
+install -d -m 2770 -o desktop -g relayaccess /home/desktop/Downloads/recordings
 
 if [ ! -e /home/desktop/.relay-xfce-v1 ]; then
   cp -a /opt/relay/home-template/.config /home/desktop/
