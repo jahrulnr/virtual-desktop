@@ -21,18 +21,27 @@ audience needs to see what the agent sees—and step in when judgment matters.
   preemption.
 - A real OS cursor baked into the stream, including while the browser is in
   observer mode.
+- Human-like AI pointer motion with friction-style acceleration/deceleration and
+  interruptible, character-paced text entry.
 - Hybrid agent grounding: bounded AT-SPI accessibility snapshots plus PNG
   screenshots for visual or canvas-based interfaces.
 - Validated XTEST mouse and keyboard input; no arbitrary shell endpoint.
 - Chromium, Terminal, and Files included, with guarded APT or local `.deb`
   installation for runtime apps such as Electron packages.
+- Headed Playwright MCP controlling the same visible Chromium profile, with
+  browser DOM, console, and network debugging available to Coddy.
+- A calm local `index.html` start page in Chromium, with the empty bookmarks bar
+  hidden so the browser opens ready for work.
+- A quiet stage with only centered **Take control**; the lease, tools, and
+  activity live in a sidebar, while an automatic 200% showcase camera follows
+  every successful AI pointer action without adding another agent tool.
 - Persistent home, a shared `~/workspace` the human can browse, approved-install
   state, and Coddy conversations across normal container recreation.
 - An in-container `os-operator` skill and `relayctl.py` client for AI agents.
 - A pinned [Coddy Agent](https://github.com/coddy-project/coddy-agent) Go binary,
   persistent conversations, and a first-party Go MCP computer server.
-- A responsive Coddy flight-recorder panel with task streaming, tool activity,
-  stop controls, and explicit permission decisions.
+- A tablet/desktop Coddy flight-recorder panel with task streaming, tool
+  activity, stop controls, and explicit permission decisions.
 
 ## Quick start
 
@@ -89,9 +98,10 @@ changes who may send input, not which desktop they are connected to.
 1. The browser opens view-only behind a transparent input shield. Its ordinary
    browser cursor remains visible and cannot accidentally reach noVNC.
 2. An AI claims a short lease and sends bounded input through the control API.
-3. Clicking **Take control** in the chrome (or pressing `Alt+Shift+C`) preempts
-   that AI lease, stops an in-flight Coddy turn, removes the shield, and lets
-   noVNC capture the human pointer, keyboard, and clipboard.
+3. Clicking the centered **Take control** button (or pressing `Alt+Shift+C`)
+   preempts that AI lease, stops an in-flight Coddy turn, removes the shield,
+   and lets noVNC capture the human pointer, keyboard, and clipboard. Lease
+   details and the rest of the session chrome stay in the sidebar.
 4. Clicking **Release** or pressing `Alt+Shift+C` again returns the browser to
    observer mode. The AI can claim a fresh lease and continue from the exact same
    screen.
@@ -104,9 +114,21 @@ or input request, so a well-behaved operator stops immediately.
 Coddy reaches the desktop through an internal Streamable HTTP MCP server. Its
 `computer` tool exposes screenshot, smooth pointer movement, clicks and drag,
 mouse down/up, cursor position, typing, key chords, hold-key, four-direction
-scroll, wait, and release-control. Click and scroll may omit coordinates to act
-at the current pointer. `wait` holds the agent lease so a human takeover can
-cancel it. `ui_inspect` returns a bounded AT-SPI tree.
+scroll, wait, and release-control. The runtime automatically moves its activity-driven 200%
+showcase camera after successful pointer actions, so the AI does not select or
+manage a separate presentation tool. Camera retargets ease for 240 ms from the
+currently visible position and are baked into saved 30 fps recordings. Click and
+scroll may omit coordinates to act at the current pointer. Pointer paths use a friction-like ease-in/ease-out curve;
+text is sent as small blocking deltas, preferring word boundaries, with a 50 ms
+per-character delay. MCP clicks and key chords leave a short blocking settle
+pause so window and page transitions remain legible. `wait` holds the agent lease
+so a human takeover can cancel it. `ui_inspect` returns a bounded AT-SPI tree.
+
+For browser work, Coddy also has a `playwright` MCP server on container loopback.
+Use it for DOM locators, browser console/network inspection, and browser-level
+debugging; use `computer` for the shared OS surface. Playwright launches the
+headed Chromium window visible in the same framebuffer and keeps its profile in
+the persistent desktop home volume.
 
 Coddy handles model, session, and tool orchestration while the small Go MCP
 process owns the stable computer-use contract. Both run in the desktop container,
@@ -140,8 +162,9 @@ docker compose exec -T desktop sh -lc '
 
 The intended operating loop is accessibility-first, vision as fallback, then a
 small action batch followed by observation. Coordinates always refer to the
-1440×900 framebuffer, not the browser-scaled canvas. The full wire contract is in
-[the API reference](docs/API.md).
+1440×900 framebuffer, not the browser-scaled canvas. The observer and saved MP4
+apply the automatic camera around the current AI pointer without changing that
+coordinate contract. The full wire contract is in [the API reference](docs/API.md).
 
 ## Installing desktop and Electron apps
 
@@ -177,6 +200,7 @@ browser ── task/SSE ────────┼── one desktop container
                              ├── Xvfb :0 + XFCE + apps
                              ├── noVNC + bounded control API
                              ├── Go computer MCP
+                             ├── headed Playwright MCP + Chromium
                              └── Coddy + persistent sessions
 ```
 

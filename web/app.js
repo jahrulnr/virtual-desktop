@@ -4,14 +4,21 @@ import {
   normalizeHistory,
   renderMarkdown,
 } from "/agent-view.mjs";
+import {
+  CAMERA_EASING,
+  CAMERA_IDLE_TIMEOUT_MS,
+  CAMERA_TRANSITION_MS,
+  SHOWCASE_ACTIVE_ZOOM,
+  SHOWCASE_IDLE_ZOOM,
+  normalizeZoom,
+  pointerOrigin,
+} from "/zoom.mjs";
 
 const screen = document.querySelector("#desktop-screen");
+const desktopViewport = document.querySelector("#desktop-viewport");
 const placeholder = document.querySelector("#feed-placeholder");
-const connectionDot = document.querySelector("#connection-dot");
-const connectionLabel = document.querySelector("#connection-label");
 const leaseOwner = document.querySelector("#lease-owner");
 const leaseDetail = document.querySelector("#lease-detail");
-const operatorLabel = document.querySelector("#operator-label");
 const takeControl = document.querySelector("#take-control");
 const releaseControl = document.querySelector("#release-control");
 const drawer = document.querySelector("#control-drawer");
@@ -26,9 +33,7 @@ const approvalOutput = document.querySelector("#approval-output");
 const installKind = document.querySelector("#install-kind");
 const installValue = document.querySelector("#install-value");
 const installValueLabel = document.querySelector("#install-value-label");
-const agentDrawer = document.querySelector("#agent-drawer");
 const openAgent = document.querySelector("#open-agent");
-const closeAgent = document.querySelector("#close-agent");
 const agentStatus = document.querySelector("#agent-status");
 const agentStatusLabel = document.querySelector("#agent-status-label");
 const agentTranscript = document.querySelector("#agent-transcript");
@@ -47,24 +52,16 @@ const MAX_EVENT_CHARS = 256 * 1024;
 const MAX_ASSISTANT_CHARS = 256 * 1024;
 const MAX_TRANSCRIPT_ITEMS = 200;
 const displayMeta = document.querySelector("#display-meta");
-const sessionMeta = document.querySelector("#session-meta");
-const modeBanner = document.querySelector("#mode-banner");
-const modeBannerLabel = document.querySelector("#mode-banner-label");
-const leaseCountdown = document.querySelector("#lease-countdown");
-const agentCanvasBadge = document.querySelector("#agent-canvas-badge");
-const leaseWarning = document.querySelector("#lease-warning");
-const renewLease = document.querySelector("#renew-lease");
-const drawerScrim = document.querySelector("#drawer-scrim");
+const sidebarReopen = document.querySelector("#sidebar-reopen");
 const feedPlaceholderLabel = document.querySelector("#feed-placeholder-label");
 const feedPlaceholderSub = document.querySelector("#feed-placeholder-sub");
 const openShortcuts = document.querySelector("#open-shortcuts");
 const shortcutsDialog = document.querySelector("#shortcuts-dialog");
 const fullscreenLabel = document.querySelector("#fullscreen-label");
 const newAgentSession = document.querySelector("#new-agent-session");
-const copySessionId = document.querySelector("#copy-session-id");
-const disconnectButton = document.querySelector("#disconnect");
-const startRecording = document.querySelector("#start-recording");
-const stopRecording = document.querySelector("#stop-recording");
+const collapseAgent = document.querySelector("#collapse-agent");
+const recordingToggle = document.querySelector("#recording-toggle");
+const recordingLabel = document.querySelector("#recording-label");
 const discardRecording = document.querySelector("#discard-recording");
 const activityLog = document.querySelector("#activity-log");
 const sessionId = crypto.randomUUID();
@@ -77,13 +74,16 @@ let rfb;
 let selkiesFrame;
 let streamingBackend = "vnc";
 let reconnectTimer;
-let hasConnected = false;
 let humanToken = "";
 let agentAbort;
 let pendingPermission;
 let agentHistoryLoaded = false;
 let transcriptItems = [];
 const permissionQueue = [];
+let desktopZoom = SHOWCASE_IDLE_ZOOM;
+let desktopDisplay = { width: 1440, height: 900 };
+const cameraAnimations = new WeakMap();
+let cameraIdleTimer;
 
 function modKey(event) {
   return event.metaKey || event.ctrlKey;
@@ -92,13 +92,6 @@ function modKey(event) {
 function isTypingContext(target) {
   if (!(target instanceof Element)) return false;
   return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
-
-function updateSessionMeta() {
-  if (sessionMeta) {
-    sessionMeta.textContent = `${agentSessionId.slice(0, 18)}…`;
-    sessionMeta.title = agentSessionId;
-  }
 }
 
 function updatePageTitle(owner) {
@@ -111,19 +104,9 @@ function updatePageTitle(owner) {
   document.title = `Cloud Agent · ${suffix}`;
 }
 
-function setDrawerScrim(visible) {
-  if (!drawerScrim) return;
-  drawerScrim.hidden = !visible;
-}
-
 function closeControlDrawer() {
   drawer.hidden = true;
   openTools.setAttribute("aria-expanded", "false");
-  setDrawerScrim(false);
-}
-
-function closeDrawers() {
-  closeControlDrawer();
 }
 
 function isAgentOpen() {
@@ -135,39 +118,73 @@ function toggleAgent(open, { focus = true } = {}) {
   document.body.dataset.agentOpen = String(next);
   localStorage.setItem("relay.agent.panel", next ? "open" : "closed");
   openAgent.setAttribute("aria-expanded", String(next));
+  collapseAgent.setAttribute("aria-expanded", String(next));
+  if (sidebarReopen) sidebarReopen.hidden = next;
   if (!focus) return;
   if (next) agentPrompt.focus();
   else openAgent.focus();
 }
 
-function syncModeBanner(state, isOurs) {
-  const owner = isOurs ? "human-self" : state.owner;
-  const labels = {
-    "human-self": "You have control",
-    agent: "Agent is operating",
-    human: "Another viewer has control",
-    none: "Observer mode",
-  };
-  if (modeBannerLabel) modeBannerLabel.textContent = labels[owner] || labels.none;
-  const seconds = Math.ceil((state.expiresInMs || 0) / 1000);
-  if (leaseCountdown) {
-    if (state.owner === "none" || seconds <= 0) {
-      leaseCountdown.hidden = true;
-      leaseCountdown.textContent = "";
-    } else {
-      leaseCountdown.hidden = false;
-      leaseCountdown.textContent = `${seconds}s`;
-    }
-  }
-  if (agentCanvasBadge) agentCanvasBadge.hidden = state.owner !== "agent";
-  updatePageTitle(owner);
+function desktopSurfaces() {
+  return [...desktopViewport.querySelectorAll("canvas, .selkies-frame")];
 }
 
-function setLeaseWarning(state, isOurs) {
-  if (!leaseWarning) return;
-  const show = isOurs && (state.expiresInMs || 0) > 0 && (state.expiresInMs || 0) < 12_000;
-  leaseWarning.hidden = !show;
+function prefersReducedCameraMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 }
+
+function setCameraOrigin(pivot) {
+  const origin = pointerOrigin(pivot, desktopDisplay, desktopZoom);
+  const target = `${origin.x} ${origin.y}`;
+  desktopViewport.style.setProperty("--desktop-zoom-origin-x", origin.x);
+  desktopViewport.style.setProperty("--desktop-zoom-origin-y", origin.y);
+
+  for (const surface of desktopSurfaces()) {
+    const current = getComputedStyle(surface).transformOrigin;
+    cameraAnimations.get(surface)?.cancel();
+    surface.style.transformOrigin = target;
+    if (prefersReducedCameraMotion() || typeof surface.animate !== "function") continue;
+    const animation = surface.animate(
+      [{ transformOrigin: current }, { transformOrigin: target }],
+      { duration: CAMERA_TRANSITION_MS, easing: CAMERA_EASING },
+    );
+    cameraAnimations.set(surface, animation);
+  }
+}
+
+function setDesktopZoom(
+  value,
+  { pivot = null, announce = true, instantZoom = false } = {},
+) {
+  desktopZoom = normalizeZoom(value);
+  if (pivot) setCameraOrigin(pivot);
+
+  const surfaces = desktopSurfaces();
+  if (instantZoom) {
+    for (const surface of surfaces) {
+      cameraAnimations.get(surface)?.cancel();
+      surface.style.transition = "none";
+    }
+  }
+  desktopViewport.style.setProperty("--desktop-zoom", String(desktopZoom));
+  if (instantZoom) {
+    for (const surface of surfaces) getComputedStyle(surface).transform;
+    for (const surface of surfaces) surface.style.removeProperty("transition");
+  }
+  const level = `${Math.round(desktopZoom * 100)}%`;
+  if (announce) announcer.textContent = `Desktop zoom ${level}`;
+}
+
+function scheduleCameraIdle() {
+  clearTimeout(cameraIdleTimer);
+  cameraIdleTimer = setTimeout(() => {
+    if (document.body.dataset.owner !== "human-self") {
+      setDesktopZoom(SHOWCASE_IDLE_ZOOM, { announce: false });
+    }
+  }, CAMERA_IDLE_TIMEOUT_MS);
+}
+
+setDesktopZoom(desktopZoom, { announce: false });
 
 function websocketUrl() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -198,7 +215,6 @@ function disconnectStream() {
 
 function connectSelkies(path = "/selkies/") {
   disconnectStream();
-  setConnection("", "Connecting");
   setFeedStatus("Connecting to desktop", "Opening Selkies stream");
   selkiesFrame = document.createElement("iframe");
   selkiesFrame.src = path;
@@ -206,19 +222,16 @@ function connectSelkies(path = "/selkies/") {
   selkiesFrame.className = "selkies-frame";
   selkiesFrame.allow = "autoplay; clipboard-read; clipboard-write; fullscreen";
   selkiesFrame.addEventListener("load", () => {
-    hasConnected = true;
     placeholder?.remove();
-    setConnection("connected", "Signal live");
     announcer.textContent = "Remote desktop connected";
   }, { once: true });
-  screen.appendChild(selkiesFrame);
+  desktopViewport.appendChild(selkiesFrame);
 }
 
 function connectVnc() {
   disconnectStream();
-  setConnection("", "Connecting");
   setFeedStatus("Connecting to desktop", "Opening WebSocket to VNC bridge");
-  rfb = new RFB(screen, websocketUrl(), { shared: true });
+  rfb = new RFB(desktopViewport, websocketUrl(), { shared: true });
   rfb.scaleViewport = true;
   rfb.resizeSession = false;
   rfb.viewOnly = true;
@@ -226,9 +239,7 @@ function connectVnc() {
   rfb.compressionLevel = 3;
 
   rfb.addEventListener("connect", () => {
-    hasConnected = true;
     placeholder?.remove();
-    setConnection("connected", "Signal live");
     announcer.textContent = "Remote desktop connected";
   });
   rfb.addEventListener("credentialsrequired", () => {
@@ -237,15 +248,14 @@ function connectVnc() {
     passwordInput.focus();
   });
   rfb.addEventListener("securityfailure", () => {
-    setConnection("failed", "Password rejected");
     humanToken = "";
     passwordInput.value = "";
     passwordInput.setAttribute("aria-invalid", "true");
+    announcer.textContent = "VNC password rejected";
     if (!credentialsDialog.open) credentialsDialog.showModal();
   });
   rfb.addEventListener("disconnect", (event) => {
-    hasConnected = false;
-    setConnection("failed", event.detail.clean ? "Signal closed" : "Signal lost");
+    announcer.textContent = event.detail.clean ? "Remote desktop disconnected" : "Remote desktop connection lost";
     if (!event.detail.clean) reconnectTimer = setTimeout(connect, 2000);
   });
 }
@@ -255,7 +265,6 @@ async function connect() {
   await detectStreamingBackend();
   if (streamingBackend === "selkies") {
     if (!humanToken) {
-      setConnection("", "Connecting");
       setFeedStatus("Authenticating", "Enter the VNC password to continue");
       if (!credentialsDialog.open) credentialsDialog.showModal();
       passwordInput.focus();
@@ -265,13 +274,6 @@ async function connect() {
     return;
   }
   connectVnc();
-}
-
-function setConnection(state, label) {
-  connectionDot.className = `status-dot ${state}`;
-  connectionLabel.textContent = label;
-  const chip = document.querySelector("#connection-chip");
-  if (chip) chip.setAttribute("aria-label", `Connection: ${label}`);
 }
 
 function setFeedStatus(label, sub = "") {
@@ -322,25 +324,20 @@ function renderLease(state) {
   takeControl.setAttribute("aria-pressed", String(isOurs));
   releaseControl.setAttribute("aria-pressed", String(isOurs));
   if (rfb) rfb.viewOnly = !isOurs;
-  syncModeBanner(state, isOurs);
-  setLeaseWarning(state, isOurs);
+  updatePageTitle(owner);
 
   if (isOurs) {
     leaseOwner.textContent = "You";
-    leaseDetail.textContent = leaseDetailText(state, "Keyboard and pointer are live");
-    operatorLabel.textContent = "You have control";
+    leaseDetail.textContent = leaseDetailText("Keyboard and pointer are live");
   } else if (state.owner === "agent") {
     leaseOwner.textContent = "AI operator";
-    leaseDetail.textContent = leaseDetailText(state, "Watching the agent work");
-    operatorLabel.textContent = "Agent operating";
+    leaseDetail.textContent = leaseDetailText("Watching the agent work");
   } else if (state.owner === "human") {
     leaseOwner.textContent = "Another viewer";
-    leaseDetail.textContent = leaseDetailText(state, "This feed is view-only");
-    operatorLabel.textContent = "Another viewer";
+    leaseDetail.textContent = leaseDetailText("This feed is view-only");
   } else {
     leaseOwner.textContent = "Observer";
-    leaseDetail.textContent = leaseDetailText(state, "No input is being sent");
-    operatorLabel.textContent = "Observer mode";
+    leaseDetail.textContent = leaseDetailText("No input is being sent");
   }
 }
 
@@ -352,9 +349,30 @@ async function refreshDesktopHealth() {
     if (displayMeta && width && height) {
       displayMeta.textContent = `${width}×${height} framebuffer`;
     }
+    if (width && height) desktopDisplay = { width, height };
+    if (health?.recording) syncRecordingControls(health.recording);
+    if (health?.showcase && document.body.dataset.owner !== "human-self") {
+      setDesktopZoom(health.showcase.zoom, {
+        pivot: health.showcase.pivot,
+        announce: false,
+      });
+      if (health.showcase.zoom >= SHOWCASE_ACTIVE_ZOOM) scheduleCameraIdle();
+      else clearTimeout(cameraIdleTimer);
+    }
   } catch {
     if (displayMeta) displayMeta.textContent = "Framebuffer unknown";
   }
+}
+
+function syncRecordingControls(recording = {}) {
+  if (!recordingToggle) return;
+  const active = Boolean(recording.active);
+  recordingToggle.dataset.active = String(active);
+  recordingToggle.setAttribute("aria-pressed", String(active));
+  recordingToggle.setAttribute("aria-label", active ? "Stop and save recording" : "Start screen recording");
+  recordingToggle.title = active ? "Stop and save recording" : "Start screen recording";
+  if (recordingLabel) recordingLabel.textContent = active ? "Stop" : "Record";
+  if (discardRecording) discardRecording.hidden = !active;
 }
 
 async function refreshLease() {
@@ -374,6 +392,9 @@ takeControl.addEventListener("click", async () => {
       body: JSON.stringify({ sessionId }),
     });
     renderLease(state);
+    // Showcase zoom belongs to the AI observer. Return the visual surface to
+    // 1:1 before human input reaches noVNC, whose coordinates are unzoomed.
+    setDesktopZoom(1, { announce: false, instantZoom: true });
     screen.focus();
     announcer.textContent = "You now control the remote desktop";
   } catch (error) {
@@ -391,21 +412,8 @@ releaseControl.addEventListener("click", async () => {
       body: JSON.stringify({ sessionId }),
     });
     renderLease(state);
+    refreshDesktopHealth();
     announcer.textContent = "Control returned to observer mode";
-  } catch (error) {
-    announcer.textContent = error.message;
-  }
-});
-
-renewLease?.addEventListener("click", async () => {
-  try {
-    const state = await api("/api/v1/control/human/heartbeat", {
-      method: "POST",
-      human: true,
-      body: JSON.stringify({ sessionId }),
-    });
-    renderLease(state);
-    announcer.textContent = "Control lease renewed";
   } catch (error) {
     announcer.textContent = error.message;
   }
@@ -417,7 +425,6 @@ openTools.addEventListener("click", () => {
   drawer.hidden = !open;
   openTools.setAttribute("aria-expanded", String(open));
   if (open) {
-    setDrawerScrim(true);
     closeTools.focus();
   }
 });
@@ -428,8 +435,7 @@ closeTools.addEventListener("click", () => {
 });
 
 openAgent.addEventListener("click", () => toggleAgent(!isAgentOpen()));
-closeAgent.addEventListener("click", () => toggleAgent(false));
-drawerScrim?.addEventListener("click", closeControlDrawer);
+collapseAgent.addEventListener("click", () => toggleAgent(false));
 openShortcuts?.addEventListener("click", () => shortcutsDialog?.showModal());
 
 async function claimHumanControl() {
@@ -507,8 +513,6 @@ document.querySelector("#fullscreen").addEventListener("click", async () => {
   else await document.exitFullscreen();
 });
 
-document.querySelector("#reconnect").addEventListener("click", connect);
-
 function resetAgentConversation() {
   agentSessionId = `sess_${crypto.randomUUID().replaceAll("-", "")}`;
   localStorage.setItem("relay.coddy.session", agentSessionId);
@@ -523,7 +527,6 @@ function resetAgentConversation() {
   permissionCard.hidden = true;
   pendingPermission = null;
   permissionQueue.length = 0;
-  updateSessionMeta();
   setAgentStatus("Ready for a new conversation");
   announcer.textContent = "Started a new Coddy conversation";
 }
@@ -533,19 +536,22 @@ newAgentSession?.addEventListener("click", () => {
   resetAgentConversation();
 });
 
-copySessionId?.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(agentSessionId);
-    announcer.textContent = "Coddy session ID copied";
-  } catch {
-    announcer.textContent = "Could not copy session ID";
-  }
-});
-
 let eventSource;
 
+function applyShowcaseCameraEvent(event) {
+  if (event.kind !== "showcase.camera") return;
+  if (document.body.dataset.owner === "human-self") return;
+  const detail = event.detail || {};
+  const width = detail.display?.width;
+  const height = detail.display?.height;
+  if (width && height) desktopDisplay = { width, height };
+  setDesktopZoom(detail.zoom, { pivot: detail.pivot, announce: false });
+  if (detail.zoom >= SHOWCASE_ACTIVE_ZOOM) scheduleCameraIdle();
+  else clearTimeout(cameraIdleTimer);
+}
+
 function appendActivityLine(event) {
-  if (!activityLog || event.kind === "heartbeat") return;
+  if (!activityLog || ["heartbeat", "showcase.camera"].includes(event.kind)) return;
   const line = `[${event.kind}] ${event.title}`;
   activityLog.textContent = `${activityLog.textContent}${line}\n`.slice(-4000);
 }
@@ -555,31 +561,39 @@ function connectActivityStream() {
   eventSource = new EventSource("/api/v1/events/stream");
   eventSource.onmessage = (message) => {
     try {
-      appendActivityLine(JSON.parse(message.data));
+      const event = JSON.parse(message.data);
+      applyShowcaseCameraEvent(event);
+      appendActivityLine(event);
     } catch {
       /* ignore malformed stream payloads */
     }
   };
 }
 
-async function recordingAction(path) {
-  const result = await api(path, { method: "POST", human: true, body: "{}" });
-  announcer.textContent = result?.path ? `Recording saved to ${result.path}` : `Recording ${result?.status || "updated"}`;
-  refreshDesktopHealth();
+async function recordingAction(path, active) {
+  if (!recordingToggle) return;
+  recordingToggle.disabled = true;
+  if (discardRecording) discardRecording.disabled = true;
+  try {
+    const result = await api(path, { method: "POST", human: true, body: "{}" });
+    syncRecordingControls({ active });
+    announcer.textContent = result?.path
+      ? `Recording saved to ${result.path}`
+      : `Recording ${result?.status || "updated"}`;
+    await refreshDesktopHealth();
+  } catch (error) {
+    announcer.textContent = error.message;
+  } finally {
+    recordingToggle.disabled = false;
+    if (discardRecording) discardRecording.disabled = false;
+  }
 }
 
-startRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/start"));
-stopRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/stop"));
-discardRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/discard"));
-
-disconnectButton?.addEventListener("click", () => {
-  humanToken = "";
-  closeDrawers();
-  disconnectStream();
-  hasConnected = false;
-  credentialsDialog.showModal();
-  announcer.textContent = "Disconnected from the desktop";
+recordingToggle?.addEventListener("click", () => {
+  const active = recordingToggle.dataset.active === "true";
+  recordingAction(active ? "/api/v1/recording/stop" : "/api/v1/recording/start", !active);
 });
+discardRecording?.addEventListener("click", () => recordingAction("/api/v1/recording/discard", false));
 
 installKind.addEventListener("change", () => {
   const isDeb = installKind.value === "deb";
@@ -623,10 +637,8 @@ function conciseError(error) {
   return firstLine.length > 180 ? `${firstLine.slice(0, 177)}…` : firstLine;
 }
 
-function leaseDetailText(state, base) {
-  const seconds = Math.ceil((state.expiresInMs || 0) / 1000);
-  if (state.owner === "none" || seconds <= 0) return base;
-  return `${base} · lease ${seconds}s`;
+function leaseDetailText(base) {
+  return base;
 }
 
 function messageLabel(role) {
@@ -979,6 +991,5 @@ connect();
 connectActivityStream();
 refreshLease();
 refreshDesktopHealth();
-updateSessionMeta();
 updatePageTitle("none");
 toggleAgent(localStorage.getItem("relay.agent.panel") !== "closed", { focus: false });

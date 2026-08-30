@@ -10,6 +10,7 @@ import re
 import socket
 import subprocess
 import tempfile
+import threading
 import traceback
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +24,7 @@ from .events import EventLog
 from .input_controller import InputController, SubprocessRunner
 from .metrics import MetricsRegistry
 from .recording import RecordingConflictError, RecordingError, ScreenRecorder
+from .showcase import ShowcaseCamera
 from .tmux_bridge import TerminalError, TerminalValidationError, TmuxBridge
 
 
@@ -190,6 +192,11 @@ class ControlApplication:
         self.metrics = metrics or MetricsRegistry()
         self.recorder = recorder or ScreenRecorder(width=width, height=height)
         self.terminals = terminals or TmuxBridge()
+        self.showcase = ShowcaseCamera(width=width, height=height)
+        self.showcase.subscribe(self._showcase_changed)
+        set_pointer_observer = getattr(self.input, "set_pointer_observer", None)
+        if callable(set_pointer_observer):
+            set_pointer_observer(self._showcase_pointer_activity)
 
     def _emit(self, kind: str, title: str, detail: dict[str, object] | None = None) -> None:
         self.events.emit(kind, title, detail)
@@ -235,6 +242,7 @@ class ControlApplication:
                         "backend": streaming_backend,
                         "selkiesPath": "/selkies/" if streaming_backend == "selkies" else None,
                     },
+                    "showcase": self.showcase.state(),
                 },
             )
         if method == "GET" and path == "/metrics":
@@ -305,6 +313,7 @@ class ControlApplication:
             if not self._operator_request(headers):
                 return self._unauthorized()
             state = self.recorder.start()
+            self.recorder.track_camera(self.showcase.state())
             self.metrics.inc("relay_recording_actions_total")
             self._emit("recording.started", "Screen recording started", state.as_dict())
             return json_response(200, state.as_dict())
@@ -372,6 +381,29 @@ class ControlApplication:
             )
             return json_response(200, result)
         return self._error(404, "NOT_FOUND", "route not found")
+
+    def _showcase_pointer_activity(self, x: int | None, y: int | None) -> None:
+        if x is None or y is None:
+            position = self.cursor.position()
+            x = self._cursor_coordinate(position, "x")
+            y = self._cursor_coordinate(position, "y")
+        self.showcase.follow(x, y)
+
+    def _showcase_changed(self, state: dict[str, object]) -> None:
+        self.recorder.track_camera(state)
+        self._emit(
+            "showcase.camera",
+            "Showcase camera followed the AI pointer",
+            state,
+        )
+        self.metrics.inc("relay_showcase_camera_updates_total")
+
+    @staticmethod
+    def _cursor_coordinate(position: dict[str, object], name: str) -> int:
+        value = position.get(name)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RuntimeError("cursor returned an invalid coordinate")
+        return value
 
     def _human_control(self, action: str, body: dict[object, object]) -> dict[str, object]:
         owner_id = self._identifier(body.get("sessionId"), "sessionId")

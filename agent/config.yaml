@@ -30,6 +30,9 @@ mcp_servers:
   - type: http
     name: relay
     url: "http://127.0.0.1:8090/mcp"
+  - type: http
+    name: playwright
+    url: "http://localhost:8931/mcp"
 
 mcp:
   project_trust: deny

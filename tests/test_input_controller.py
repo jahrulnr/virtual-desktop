@@ -35,6 +35,42 @@ class InputControllerTests(unittest.TestCase):
             width=1440, height=900, runner=self.runner, lease=self.lease
         )
 
+    def test_reports_successful_pointer_activity_to_the_showcase_camera(self):
+        activities = []
+        self.controller.set_pointer_observer(
+            lambda x, y: activities.append((x, y))
+        )
+
+        self.controller.apply(
+            "agent-1",
+            [
+                {"type": "move", "x": 120, "y": 240},
+                {"type": "click", "button": "left"},
+                {"type": "text", "text": "not pointer activity"},
+                {"type": "scroll", "direction": "down", "delta": -2},
+                {"type": "drag", "x": 40, "y": 50, "toX": 400, "toY": 500},
+                {"type": "wait", "durationMs": 50},
+            ],
+        )
+
+        self.assertEqual(
+            activities,
+            [(120, 240), (None, None), (None, None), (400, 500)],
+        )
+
+    def test_camera_failure_does_not_turn_a_completed_click_into_a_retryable_error(self):
+        def broken_camera(_x, _y):
+            raise RuntimeError("camera unavailable")
+
+        self.controller.set_pointer_observer(broken_camera)
+
+        self.controller.apply(
+            "agent-1",
+            [{"type": "click", "button": "left"}],
+        )
+
+        self.assertEqual(self.runner.commands, [["xdotool", "click", "1"]])
+
     def test_executes_validated_actions_without_a_shell(self):
         self.controller.apply(
             "agent-1",
@@ -56,7 +92,7 @@ class InputControllerTests(unittest.TestCase):
                     "type",
                     "--clearmodifiers",
                     "--delay",
-                    "2",
+                    "100",
                     "--",
                     "hello; $(touch /tmp/nope)",
                 ],

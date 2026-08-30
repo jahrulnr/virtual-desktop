@@ -21,6 +21,14 @@ WORKDIR /src/coddy
 RUN CGO_ENABLED=0 go test ./internal/mcp ./internal/agent ./internal/llm \
     && CGO_ENABLED=0 go build -trimpath -tags=http -ldflags="-s -w" -o /out/coddy ./cmd/coddy
 
+FROM node:22-bookworm-slim AS playwright-mcp-build
+
+ARG PLAYWRIGHT_MCP_VERSION=0.0.78
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+WORKDIR /opt/playwright-mcp
+RUN npm init --yes >/dev/null \
+    && npm install --omit=dev --ignore-scripts "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"
+
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -59,6 +67,7 @@ RUN apt-get update \
         x11vnc \
         xdg-utils \
         xdotool \
+        zenity \
         xfce4-appfinder \
         xfce4-panel \
         xfce4-session \
@@ -91,15 +100,19 @@ RUN groupadd --gid 1000 desktop \
     && install -d -o desktop -g desktop /home/desktop/Downloads /home/desktop/Desktop /home/desktop/workspace \
     && install -d -o coddy -g coddy -m 0700 /var/lib/coddy \
     && install -d -o coddy -g coddy -m 0750 /opt/relay-agent/skills/os-operator \
-    && install -d /opt/relay/control /opt/relay/broker /opt/relay/web /usr/share/licenses/coddy
+    && install -d /etc/relay /opt/relay/control /opt/relay/broker /opt/relay/web /usr/share/licenses/coddy
 
 COPY --from=computer-mcp-build /out/relay-computer-mcp /usr/local/bin/relay-computer-mcp
 COPY --from=coddy-build /out/coddy /usr/local/bin/coddy
 COPY --from=coddy-build /src/coddy/LICENSE /usr/share/licenses/coddy/LICENSE
+COPY --from=playwright-mcp-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=playwright-mcp-build /opt/playwright-mcp /opt/playwright-mcp
 COPY desktop/control/ /opt/relay/control/
 COPY desktop/broker/ /opt/relay/broker/
 COPY desktop/config/supervisord.conf /etc/supervisor/supervisord.conf
 COPY desktop/config/nginx.conf /etc/nginx/nginx.conf
+COPY desktop/config/playwright.json /etc/relay/playwright.json
+COPY desktop/config/playwright-init.ts /etc/relay/playwright-init.ts
 COPY desktop/scripts/ /opt/relay/scripts/
 COPY desktop/home/ /opt/relay/home-template/
 COPY web/ /opt/relay/web/

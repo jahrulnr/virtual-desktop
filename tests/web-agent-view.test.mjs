@@ -94,4 +94,6 @@ test("tool names are presented as user-facing actions", () => {
   assert.equal(toolDisplay("relay__ui_inspect", "{}"), "Inspect desktop");
   assert.equal(toolDisplay("relay__computer", '{"action":"left_click"}'), "Click desktop");
   assert.equal(toolDisplay("relay__computer", '{"action":"screenshot"}'), "Capture desktop");
+  assert.equal(toolDisplay("playwright__browser_snapshot", "{}"), "Inspect browser DOM");
+  assert.equal(toolDisplay("playwright__browser_console_messages", "{}"), "Read browser console");
 });

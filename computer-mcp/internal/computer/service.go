@@ -6,8 +6,23 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/relay-ai/desktop/computer-mcp/internal/relay"
+)
+
+const (
+	moveStepPixels = 40
+	maxMoveSteps   = 24
+	moveDelayMS    = 24
+	textDeltaRunes = 48
+	// Leave a short, visible settling window after a discrete AI interaction so
+	// page and window state changes are readable during a showcase.
+	actionSettleDelayMS = 180
+	// A drag has two button transitions in addition to its move/wait path;
+	// keeping 24 moves leaves the generated action batch below the 50-item API cap.
+	maxDragSteps = 24
 )
 
 type Relay interface {
@@ -102,8 +117,11 @@ func (s *Service) Execute(ctx context.Context, input Input) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		action := relay.Action{Type: "drag", X: start[0], Y: start[1], ToX: end[0], ToY: end[1], Button: "left"}
-		if err := s.relay.Apply(ctx, s.agentID, []relay.Action{action}); err != nil {
+		actions, err := s.smoothDrag(ctx, start[0], start[1], end[0], end[1])
+		if err != nil {
+			return Result{}, err
+		}
+		if err := s.relay.Apply(ctx, s.agentID, actions); err != nil {
 			return Result{}, err
 		}
 		return Result{Text: fmt.Sprintf("Dragged from (%d, %d) to (%d, %d).", start[0], start[1], end[0], end[1])}, nil
@@ -117,16 +135,19 @@ func (s *Service) Execute(ctx context.Context, input Input) (Result, error) {
 		if input.Text == "" || len(input.Text) > 4096 {
 			return Result{}, fmt.Errorf("text must contain between 1 and 4096 bytes")
 		}
-		if err := s.relay.Apply(ctx, s.agentID, []relay.Action{{Type: "text", Text: input.Text}}); err != nil {
+		if err := s.streamText(ctx, input.Text); err != nil {
 			return Result{}, err
 		}
-		return Result{Text: fmt.Sprintf("Typed %d characters.", len(input.Text))}, nil
+		return Result{Text: fmt.Sprintf("Typed %d characters.", utf8.RuneCountInString(input.Text))}, nil
 	case "key":
 		keys, err := keys(input.Key)
 		if err != nil {
 			return Result{}, err
 		}
-		if err := s.relay.Apply(ctx, s.agentID, []relay.Action{{Type: "key", Keys: keys}}); err != nil {
+		if err := s.relay.Apply(ctx, s.agentID, []relay.Action{
+			{Type: "key", Keys: keys},
+			{Type: "wait", DurationMS: actionSettleDelayMS},
+		}); err != nil {
 			return Result{}, err
 		}
 		return Result{Text: "Pressed " + strings.Join(keys, "+") + "."}, nil
@@ -279,7 +300,10 @@ func (s *Service) click(ctx context.Context, input Input) (Result, error) {
 	case "triple_click":
 		count = 3
 	}
-	actions = append(actions, relay.Action{Type: "click", Button: button, Count: count})
+	actions = append(actions,
+		relay.Action{Type: "click", Button: button, Count: count},
+		relay.Action{Type: "wait", DurationMS: actionSettleDelayMS},
+	)
 	if err := s.relay.Apply(ctx, s.agentID, actions); err != nil {
 		return Result{}, err
 	}
@@ -330,27 +354,134 @@ func (s *Service) smoothMove(ctx context.Context, targetX, targetY int) ([]relay
 	if err != nil {
 		return nil, err
 	}
-	distance := math.Hypot(float64(targetX-position.X), float64(targetY-position.Y))
-	if distance < 1 {
-		return nil, nil
+	return pacedMove(position.X, position.Y, targetX, targetY, maxMoveSteps), nil
+}
+
+func (s *Service) smoothDrag(ctx context.Context, startX, startY, endX, endY int) ([]relay.Action, error) {
+	position, err := s.relay.Cursor(ctx)
+	if err != nil {
+		return nil, err
 	}
-	steps := int(math.Ceil(distance / 32))
+	toStart := math.Hypot(float64(startX-position.X), float64(startY-position.Y))
+	whileHeld := math.Hypot(float64(endX-startX), float64(endY-startY))
+	totalDistance := toStart + whileHeld
+	totalSteps := int(math.Ceil(totalDistance / moveStepPixels))
+	if totalSteps < 1 && (toStart >= 1 || whileHeld >= 1) {
+		totalSteps = 1
+	}
+	if toStart >= 1 && whileHeld >= 1 && totalSteps < 2 {
+		totalSteps = 2
+	}
+	if totalSteps > maxDragSteps {
+		totalSteps = maxDragSteps
+	}
+	startSteps, endSteps := splitDragSteps(totalSteps, toStart, whileHeld)
+	actions := make([]relay.Action, 0, 2*totalSteps)
+	actions = append(actions, pacedMove(position.X, position.Y, startX, startY, startSteps)...)
+	actions = append(actions, relay.Action{Type: "button", Button: "left", State: "down"})
+	actions = append(actions, pacedMove(startX, startY, endX, endY, endSteps)...)
+	actions = append(actions, relay.Action{Type: "button", Button: "left", State: "up"})
+	return actions, nil
+}
+
+func pacedMove(fromX, fromY, targetX, targetY, maxSteps int) []relay.Action {
+	distance := math.Hypot(float64(targetX-fromX), float64(targetY-fromY))
+	if distance < 1 {
+		return nil
+	}
+	steps := int(math.Ceil(distance / moveStepPixels))
 	if steps < 1 {
 		steps = 1
 	}
-	if steps > 40 {
-		steps = 40
+	if steps > maxSteps {
+		steps = maxSteps
 	}
-	actions := make([]relay.Action, 0, steps)
+	actions := make([]relay.Action, 0, steps*2-1)
 	for step := 1; step <= steps; step++ {
 		progress := float64(step) / float64(steps)
-		// Smoothstep avoids the robotic constant-velocity pointer motion.
-		progress = progress * progress * (3 - 2*progress)
-		x := position.X + int(math.Round(float64(targetX-position.X)*progress))
-		y := position.Y + int(math.Round(float64(targetY-position.Y)*progress))
+		// Quintic smootherstep models a gentle friction-like start and stop:
+		// both velocity and acceleration approach zero at the endpoints.
+		progress = frictionProgress(progress)
+		x := fromX + int(math.Round(float64(targetX-fromX)*progress))
+		y := fromY + int(math.Round(float64(targetY-fromY)*progress))
 		actions = append(actions, relay.Action{Type: "move", X: x, Y: y})
+		if step < steps {
+			actions = append(actions, relay.Action{Type: "wait", DurationMS: moveDelayMS})
+		}
 	}
-	return actions, nil
+	return actions
+}
+
+func frictionProgress(progress float64) float64 {
+	return progress * progress * progress * (progress*(progress*6-15) + 10)
+}
+
+func splitDragSteps(total int, firstDistance, secondDistance float64) (int, int) {
+	if total < 1 {
+		return 0, 0
+	}
+	if firstDistance < 1 {
+		return 0, total
+	}
+	if secondDistance < 1 {
+		return total, 0
+	}
+	first := int(math.Round(float64(total) * firstDistance / (firstDistance + secondDistance)))
+	if first < 1 {
+		first = 1
+	}
+	if first >= total {
+		first = total - 1
+	}
+	return first, total - first
+}
+
+func (s *Service) streamText(ctx context.Context, text string) error {
+	for _, delta := range splitTextDeltas(text) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.relay.Apply(ctx, s.agentID, []relay.Action{{
+			Type: "text",
+			Text: delta,
+		}}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// splitTextDeltas keeps each blocking text request small enough to interrupt,
+// while preferring whitespace boundaries so the viewer sees complete words.
+// A single word longer than textDeltaRunes is split at the hard limit.
+func splitTextDeltas(text string) []string {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return nil
+	}
+
+	chunks := make([]string, 0, (len(runes)+textDeltaRunes-1)/textDeltaRunes)
+	for start := 0; start < len(runes); {
+		end := start + textDeltaRunes
+		if end >= len(runes) {
+			end = len(runes)
+		} else {
+			boundary := -1
+			for index := start; index < end; index++ {
+				if unicode.IsSpace(runes[index]) {
+					boundary = index + 1
+				}
+			}
+			// Do not turn a leading separator into a one-character delta when
+			// the following word itself reaches the hard limit.
+			if boundary > start+1 {
+				end = boundary
+			}
+		}
+		chunks = append(chunks, string(runes[start:end]))
+		start = end
+	}
+	return chunks
 }
 
 func coordinate(value []int, name string) ([2]int, error) {
@@ -362,44 +493,44 @@ func coordinate(value []int, name string) ([2]int, error) {
 
 // keyAliases maps common LLM-friendly key names to canonical X11 keysyms.
 var keyAliases = map[string]string{
-	"enter":        "Return",
-	"return":       "Return",
-	"kp_enter":     "KP_Enter",
-	"esc":          "Escape",
-	"escape":       "Escape",
-	"backspace":    "BackSpace",
-	"delete":       "Delete",
-	"del":          "Delete",
-	"insert":       "Insert",
-	"ins":          "Insert",
-	"tab":          "Tab",
-	"space":        "space",
-	"pgup":         "Prior",
-	"pageup":       "Prior",
-	"prior":        "Prior",
-	"pgdn":         "Next",
-	"pgdown":       "Next",
-	"home":         "Home",
-	"end":          "End",
-	"up":           "Up",
-	"down":         "Down",
-	"left":         "Left",
-	"right":        "Right",
-	"caps_lock":    "Caps_Lock",
-	"capslock":     "Caps_Lock",
-	"num_lock":     "Num_Lock",
-	"numlock":      "Num_Lock",
-	"scroll_lock":  "Scroll_Lock",
-	"print":        "Print",
-	"printscreen":  "Print",
-	"prtsc":        "Print",
-	"pause":        "Pause",
-	"menu":         "Menu",
-	"ctrl":         "ctrl",
-	"alt":          "alt",
-	"shift":        "shift",
-	"super":        "super",
-	"meta":         "super",
+	"enter":       "Return",
+	"return":      "Return",
+	"kp_enter":    "KP_Enter",
+	"esc":         "Escape",
+	"escape":      "Escape",
+	"backspace":   "BackSpace",
+	"delete":      "Delete",
+	"del":         "Delete",
+	"insert":      "Insert",
+	"ins":         "Insert",
+	"tab":         "Tab",
+	"space":       "space",
+	"pgup":        "Prior",
+	"pageup":      "Prior",
+	"prior":       "Prior",
+	"pgdn":        "Next",
+	"pgdown":      "Next",
+	"home":        "Home",
+	"end":         "End",
+	"up":          "Up",
+	"down":        "Down",
+	"left":        "Left",
+	"right":       "Right",
+	"caps_lock":   "Caps_Lock",
+	"capslock":    "Caps_Lock",
+	"num_lock":    "Num_Lock",
+	"numlock":     "Num_Lock",
+	"scroll_lock": "Scroll_Lock",
+	"print":       "Print",
+	"printscreen": "Print",
+	"prtsc":       "Print",
+	"pause":       "Pause",
+	"menu":        "Menu",
+	"ctrl":        "ctrl",
+	"alt":         "alt",
+	"shift":       "shift",
+	"super":       "super",
+	"meta":        "super",
 }
 
 // keyModifiers are accepted in any case and passed to xdotool lowercase,

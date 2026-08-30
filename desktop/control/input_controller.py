@@ -67,6 +67,11 @@ class SubprocessRunner:
 class InputController:
     BUTTONS = {"left": "1", "middle": "2", "right": "3"}
     KEY_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+    TEXT_DELAY_MS = 50
+    # The xdotool version in the desktop image halves --delay once for key-down
+    # and once again for key-up. Double the wire value to keep the effective
+    # inter-character delay at the user-facing 50 ms target.
+    XDOTOOL_TEXT_DELAY_MS = TEXT_DELAY_MS * 2
 
     # Canonical X11 keysyms xdotool accepts. Names outside this map (after
     # alias resolution) are rejected instead of being silently ignored by
@@ -141,6 +146,13 @@ class InputController:
         self._generation = 0
         self._held_buttons: set[str] = set()
         self._held_keys: set[str] = set()
+        self._pointer_observer: Callable[[int | None, int | None], None] | None = None
+
+    def set_pointer_observer(
+        self, observer: Callable[[int | None, int | None], None]
+    ) -> None:
+        """Attach the presentation camera without adding another agent action."""
+        self._pointer_observer = observer
 
     def apply(self, owner_id: str, actions: object) -> None:
         self.lease.assert_owner("agent", owner_id)
@@ -164,6 +176,24 @@ class InputController:
                 raise
             else:
                 self._complete_action(action)
+                self._report_pointer_activity(action)
+
+    def _report_pointer_activity(self, action: dict[object, object]) -> None:
+        observer = self._pointer_observer
+        if observer is None:
+            return
+        action_type = action.get("type")
+        try:
+            if action_type == "move":
+                observer(int(action["x"]), int(action["y"]))
+            elif action_type == "drag":
+                observer(int(action["toX"]), int(action["toY"]))
+            elif action_type in {"click", "scroll", "button"}:
+                observer(None, None)
+        except Exception as error:
+            # The X action has already succeeded. Surfacing a camera failure as
+            # an input error could make an agent retry a destructive click.
+            print(f"input-controller: showcase camera update failed: {error}", flush=True)
 
     def preempt(self) -> None:
         """Cancel live AI input and release any X state before human claim returns."""
@@ -271,8 +301,9 @@ class InputController:
 
     def _move(self, action: dict[object, object]) -> list[str]:
         x, y = self._coordinates(action)
-        # --sync waits for a position change and can hang when a caller repeats
-        # the current coordinates. xdotool flushes this request before it exits.
+        # The Go MCP service emits paced paths. The subprocess itself is
+        # awaited by SubprocessRunner, so adding --sync would wait for an X11
+        # motion notification that is not emitted reliably by every X server.
         return ["xdotool", "mousemove", str(x), str(y)]
 
     def _click(self, action: dict[object, object]) -> list[str]:
@@ -297,7 +328,7 @@ class InputController:
             "type",
             "--clearmodifiers",
             "--delay",
-            "2",
+            str(self.XDOTOOL_TEXT_DELAY_MS),
             "--",
             value,
         ]

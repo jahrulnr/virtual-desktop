@@ -23,7 +23,7 @@ deployment it must travel only over HTTPS.
 ## Health and lease
 
 - `GET /api/v1/health` — status, uptime, display dimensions, current lease, recording
-  state, and streaming backend (`vnc` or `selkies`); public.
+  state, streaming backend (`vnc` or `selkies`), and AI showcase zoom state; public.
 - `GET /api/v1/events` — recent control and lifecycle events; public.
 - `GET /api/v1/events/stream` — Server-Sent Events stream of the same event log; public.
 - `GET /metrics` — Prometheus text exposition of relay counters; public.
@@ -94,12 +94,59 @@ Coordinates are absolute framebuffer pixels. Buttons are `left`, `middle`, or
 xdotool key names; scroll direction is `up`, `down`, `left`, or `right` and its
 amount is 1–10. Wait and held-key duration are bounded.
 
+The `computer` MCP service turns pointer moves into a capped, blocking path. It
+uses a quintic smootherstep (a friction-like ease-in/ease-out curve), waits
+24 ms between points, and awaits each move subprocess before continuing. Clicks
+and scrolls with a target coordinate include the same path. Dragging is expanded
+into a paced move, button-down, paced held move, and button-up sequence; the
+generated batch remains within the 50-action limit. Human takeover cancels the
+active subprocess and releases any held input.
+
+The `computer` MCP `type` action sends at most 48 Unicode characters per
+blocking delta, preferring whitespace boundaries so words are not split when
+possible. Each delta is applied separately so a human takeover can stop between
+deltas, while the controller's xdotool command emits each character with a
+50 ms delay. Direct `/api/v1/input` text actions use that same per-character
+delay but are not split by the HTTP API. MCP click and key actions append a
+180 ms blocking settle pause so visible window and page transitions do not feel
+like an instantaneous macro.
+
+### Automatic AI showcase camera
+
+The camera is part of `/api/v1/input`, not a separate agent action. After each
+successful AI `move`, `click`, `scroll`, `button`, or `drag` action, the control
+runtime updates an activity-driven 200% camera around the resulting real X pointer. Health
+returns the current camera state:
+
+```json
+{
+  "zoom": 2.0,
+  "pivot": {"x": 900, "y": 420},
+  "display": {"width": 1440, "height": 900}
+}
+```
+
+The control API emits the same payload as a public `showcase.camera` event. Web
+observers follow it automatically with an interruptible 240 ms ease-out: a new
+target continues from the camera's currently rendered position instead of
+snapping or waiting for the previous move. The active zoom starts when
+the desktop surface appears. A client taking human control switches immediately
+to a 1:1 view before input is enabled, avoiding a temporary mismatch with noVNC's
+unzoomed coordinates; one second of pointer inactivity eases back to 100%. Browsers
+requesting reduced motion still follow every target but apply it without motion.
+The AI's 1440×900 coordinates and the guest application are unchanged.
+
 ## Screen recording
 
-Recording uses FFmpeg x11grab and writes MP4 files under
+Recording first captures the X11 framebuffer to a hidden temporary MP4 and
+records the automatic camera timeline. On save, FFmpeg samples the same 240 ms
+ease-out on real 30 fps presentation timestamps, applies the activity-driven zoom and
+pointer-following crop, and produces the public MP4 under
 `/home/desktop/Downloads/recordings/` (created by the container entrypoint with
 group-writable permissions for the control API). Saved files are capped at
-512 MiB.
+512 MiB. Rendering has a duration-proportional timeout, and dimensions that
+cannot be encoded as `yuv420p` fail before capture begins. A render failure never
+publishes the raw framebuffer capture as the final showcase video.
 
 - `GET /api/v1/recording` — bearer token; returns `{active, startedAtMs?, outputPath?}`.
 - `POST /api/v1/recording/start` — bearer token or human capability; starts capture.
@@ -142,6 +189,18 @@ credential. The server exposes:
   `DISCARD_RECORDING`;
 - `terminal` with actions `list`, `create`, `capture`, `send`, and `destroy`.
 
+### Playwright browser automation
+
+Coddy also connects to the headed Playwright MCP server at
+`http://localhost:8931/mcp` inside the container. It owns the visible
+`/usr/bin/chromium` process, uses the persistent
+`/home/desktop/.config/chromium` profile, and enables browser inspection/debug
+tools. This endpoint binds to container loopback and is not published through
+nginx or Compose. Use Playwright tools for DOM, console, network, and browser
+debugging; use `relay__computer` for the OS desktop, window manager, pointer,
+keyboard, and non-browser surfaces. Both surfaces address the same visible
+browser session.
+
 ### External agents
 
 Agents outside the desktop container reach the same server through a second,
@@ -182,6 +241,11 @@ actions accept `[x,y]` in the 1440×900 framebuffer, or omit `coordinate` to act
 at the current pointer, and automatically obtain an agent lease. `wait` is an
 input action on the live lease so human takeover can cancel it. A live human
 lease is never preempted and surfaces as a tool error.
+
+The control runtime automatically applies the current AI showcase camera to web
+observers and saved recordings. Coddy only chooses normal `computer` actions;
+camera zoom and follow behavior never enter the model's tool-selection loop and
+do not change the MCP framebuffer coordinate contract.
 
 ## Browser-to-Coddy gateway
 

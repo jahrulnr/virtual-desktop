@@ -1,0 +1,29 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "userDataDir": "/home/desktop/.config/chromium",
+    "launchOptions": {
+      "executablePath": "/usr/bin/chromium",
+      "headless": false,
+      "chromiumSandbox": true,
+      "args": [
+        "--force-renderer-accessibility",
+        "--no-first-run",
+        "--hide-crash-restore-bubble",
+        "--disable-sync",
+        "--disable-features=TranslateUI",
+        "--window-size=1100,680",
+        "--window-position=170,95"
+      ]
+    },
+    "initPage": [
+      "/etc/relay/playwright-init.ts"
+    ],
+    "contextOptions": {
+      "viewport": {
+        "width": 1100,
+        "height": 680
+      }
+    }
+  }
+}

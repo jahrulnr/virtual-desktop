@@ -55,6 +55,8 @@ for relay_lock in \
   fi
 done
 
+python3 /opt/relay/scripts/configure-chromium-profile.py
+
 if [ "${RESTORE_INSTALLS:-true}" = true ] && [ -s /var/lib/relay/install-manifest.json ]; then
   if ! python3 /opt/relay/broker/restore_installs.py; then
     echo "Warning: one or more approved install plans could not be restored" >&2

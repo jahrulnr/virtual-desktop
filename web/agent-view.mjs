@@ -246,6 +246,20 @@ export function toolDisplay(name, rawInput) {
     })[parseArguments(rawInput).action] || "Operate terminal";
   }
   const leaf = normalized.includes("__") ? normalized.split("__").at(-1) : normalized;
+  if (normalized.startsWith("playwright__")) {
+    return ({
+      browser_navigate: "Open browser page",
+      browser_snapshot: "Inspect browser DOM",
+      browser_click: "Click browser element",
+      browser_type: "Type in browser",
+      browser_press_key: "Press browser key",
+      browser_console_messages: "Read browser console",
+      browser_network_requests: "Inspect browser network",
+      browser_take_screenshot: "Capture browser page",
+      browser_evaluate: "Evaluate browser page",
+      browser_run_code: "Run browser debug code",
+    })[leaf] || "Inspect browser";
+  }
   return leaf
     ? leaf.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase())
     : "Agent tool";

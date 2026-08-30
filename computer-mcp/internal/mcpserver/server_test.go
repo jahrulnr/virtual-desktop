@@ -108,6 +108,33 @@ func TestUIInspectReturnsAccessibilityJSON(t *testing.T) {
 	}
 }
 
+func TestToolSurfaceKeepsShowcaseCameraAutomatic(t *testing.T) {
+	ctx := context.Background()
+	server := New(computer.NewService(fakeBackend{}, "coddy-test"))
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1"}, nil)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientSession.Close()
+
+	result, err := clientSession.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range result.Tools {
+		if tool.Name == "showcase_zoom" {
+			t.Fatal("showcase_zoom must not be exposed; pointer input drives the camera automatically")
+		}
+	}
+}
+
 func TestHTTPTransportIsStateless(t *testing.T) {
 	ctx := context.Background()
 	httpServer := httptest.NewServer(NewHTTPHandler(computer.NewService(fakeBackend{}, "coddy-test")))

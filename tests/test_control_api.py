@@ -17,9 +17,22 @@ class FakeInput:
     def __init__(self):
         self.calls = []
         self.preemptions = 0
+        self.pointer_observer = None
+
+    def set_pointer_observer(self, observer):
+        self.pointer_observer = observer
 
     def apply(self, owner_id, actions):
         self.calls.append((owner_id, actions))
+        if self.pointer_observer is None:
+            return
+        for action in actions:
+            if action.get("type") == "move":
+                self.pointer_observer(action["x"], action["y"])
+            elif action.get("type") in {"click", "scroll", "button"}:
+                self.pointer_observer(None, None)
+            elif action.get("type") == "drag":
+                self.pointer_observer(action["toX"], action["toY"])
 
     def preempt(self):
         self.preemptions += 1
@@ -50,6 +63,7 @@ class FakeCursor:
 class FakeRecorder:
     def __init__(self):
         self.active = False
+        self.camera_states = []
 
     def state(self) -> RecordingState:
         return RecordingState(active=self.active)
@@ -72,6 +86,10 @@ class FakeRecorder:
                 "durationMs": 1000,
             }
         return {"status": "discarded"}
+
+    def track_camera(self, state):
+        if self.active:
+            self.camera_states.append(state)
 
 
 class FakeDownloadRecorder(FakeRecorder):
@@ -149,6 +167,9 @@ class ControlAPITests(unittest.TestCase):
         except urllib.error.HTTPError as error:
             return error.code, error.headers, json.loads(error.read())
 
+    def setUp(self):
+        self.server.application.showcase.follow(720, 450)
+
     def tearDown(self):
         state = self.lease.state()
         if state["owner"] != "none":
@@ -161,6 +182,11 @@ class ControlAPITests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["display"], {"width": 1440, "height": 900})
+        self.assertEqual(body["showcase"], {
+            "zoom": 2.0,
+            "pivot": {"x": 720, "y": 450},
+            "display": {"width": 1440, "height": 900},
+        })
         self.assertIn("uptimeMs", body)
         self.assertIn("recording", body)
         self.assertEqual(body["recording"]["active"], False)
@@ -187,6 +213,11 @@ class ControlAPITests(unittest.TestCase):
         )
         self.assertEqual(started, 200)
         self.assertTrue(body["active"])
+        self.assertEqual(self.recorder.camera_states[-1], {
+            "zoom": 2.0,
+            "pivot": {"x": 720, "y": 450},
+            "display": {"width": 1440, "height": 900},
+        })
 
         saved, _, body = self.request("POST", "/api/v1/recording/stop", {}, human=True)
         self.assertEqual(saved, 200)
@@ -359,6 +390,45 @@ class ControlAPITests(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "UNAUTHORIZED")
         self.assertEqual(accepted, 200)
         self.assertEqual(position, {"x": 321, "y": 123, "screen": 0, "window": 456})
+
+    def test_showcase_camera_follows_pointer_implicitly_without_an_agent_tool(self):
+        self.request(
+            "POST",
+            "/api/v1/control/agent/claim",
+            {"agentId": "agent-camera"},
+            token="test-operator-token",
+        )
+
+        accepted, _, body = self.request(
+            "POST",
+            "/api/v1/input",
+            {
+                "agentId": "agent-camera",
+                "actions": [{"type": "move", "x": 900, "y": 420}],
+            },
+            token="test-operator-token",
+        )
+
+        self.assertEqual(accepted, 204)
+        self.assertIsNone(body)
+
+        status, _, health = self.request("GET", "/api/v1/health")
+        self.assertEqual(status, 200)
+        self.assertEqual(health["showcase"]["zoom"], 2.0)
+        self.assertEqual(health["showcase"]["pivot"], {"x": 900, "y": 420})
+        self.assertEqual(
+            self.server.application.events.list()[-1]["kind"],
+            "showcase.camera",
+        )
+
+        removed, _, removed_body = self.request(
+            "POST",
+            "/api/v1/showcase/zoom",
+            {"agentId": "agent-camera", "direction": "in"},
+            token="test-operator-token",
+        )
+        self.assertEqual(removed, 404)
+        self.assertEqual(removed_body["error"]["code"], "NOT_FOUND")
 
 
 class RecordingDownloadTests(unittest.TestCase):

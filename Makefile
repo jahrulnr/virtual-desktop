@@ -21,7 +21,7 @@ test-go:
 	cd computer-mcp && go test ./... && go vet ./...
 
 test-web:
-	node --test tests/web-agent-view.test.mjs
+	node --test tests/web-agent-view.test.mjs tests/web-shell.test.mjs tests/web-zoom.test.mjs
 
 static:
 	./tests/static-checks.sh

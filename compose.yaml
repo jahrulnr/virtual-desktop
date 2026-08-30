@@ -4,6 +4,7 @@ services:
       context: .
       args:
         CODDY_REF: "2ba0ec9cc531e31954c2565b2984d92d4bc890d3"
+        PLAYWRIGHT_MCP_VERSION: "0.0.78"
     image: relay-ai-desktop:local
     init: true
     ports:

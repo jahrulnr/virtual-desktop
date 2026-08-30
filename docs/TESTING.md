@@ -30,12 +30,14 @@ loopback community setup.
 Unit tests cover lease expiration/preemption, validated input translation, API
 authentication/error contracts, recording and terminal routes, Prometheus metrics,
 SSE event streams, bounded accessibility serialization, exact package approvals,
-expiry/single-use behavior, path confinement, and `.deb` replacement.
+expiry/single-use behavior, path confinement, `.deb` replacement, automatic camera
+keyframes, and mandatory showcase rendering without a raw-video fallback.
 Static checks compile Python, parse Compose, syntax-check shell, require loopback
 binding and expected response headers, reject dangerous host integration, and forbid
 `--no-sandbox`. The live smoke test checks health, metrics, recording/streaming
 fields, actual X pointer movement, human preemption and 409 rejection, a 1440x900
-screenshot, AT-SPI output, and expected response headers.
+screenshot, a 1440x900 camera-rendered MP4 with no published raw capture, AT-SPI
+output, and expected response headers.
 
 Go tests additionally cover Relay response validation, smooth-move generation,
 the full computer action inventory, MCP image blocks, stateless reconnects, and
@@ -56,11 +58,12 @@ Chromium should run as `desktop`, have renderer/zygote children, and must not co
 
 1. Start Relay and open `http://127.0.0.1:3000` in a browser. Enter the configured
    VNC password (`testtest` in the loopback-only Compose default). Leave the UI in
-   observer mode. The desktop framebuffer must stay fully visible; **Take control**
-   belongs in the chrome, not over the middle of the screen.
+   observer mode. Confirm the stage has no floating session overlays, the lease
+   card and Coddy task state are in the sidebar, and centered **Take control**
+   remains visible for takeover.
 2. In a terminal, read the local operator token and run the claim/input example in
-   the README. Confirm the real cursor moves in the browser and the operator chip
-   says **AI is operating**.
+   the README. Confirm the real cursor moves in the browser and the lease card
+   identifies **AI operator** while the Coddy status line shows the active turn.
 3. Start an agent heartbeat every five seconds:
 
    ```bash
@@ -83,7 +86,10 @@ Chromium should run as `desktop`, have renderer/zygote children, and must not co
    or mouse button may remain held.
 5. Click **Release** or press `Alt+Shift+C`. Have the agent claim again and move the
    pointer.
-   Confirm the browser becomes view-only and immediately observes the agent's move.
+   Confirm the browser becomes view-only, returns to 100% zoom, and smoothly follows
+   the agent's real pointer. Start a short recording, move to two distant controls,
+   save it, and confirm the MP4 contains the same reframing rather than the raw
+   1440x900 framebuffer view.
 6. Optional multi-viewer check: open a second browser/private window. Both should
    see the same desktop and real cursor; a takeover in either window makes the other
    observer-only on its next status refresh.
@@ -128,11 +134,11 @@ The home profile, files, and install manifest should be absent after reset.
 
 ## Coddy panel browser check
 
-At 1366×768, 768×700, and 320×650:
+At 1366×768, 1024×768, and 768×700:
 
 1. Authenticate to VNC and open the **C** operator panel.
-2. Confirm the trigger retains the accessible name **Open Coddy operator** even
-   when its visible label collapses on mobile.
+2. Confirm the stage remains quiet and the lease card, task state, and composer
+   stay readable in the sidebar.
 3. Submit a task and confirm the transcript streams without raw HTML execution.
 4. With an invalid model key, confirm the panel reports an error rather than a
    successful completion.

@@ -57,14 +57,36 @@ assert (width, height) == (1440, 900), (width, height)
 
 curl -fsS -X POST \
   -H "$relay_auth" -H 'Content-Type: application/json' \
+  -d '{"agentId":"native-smoke"}' \
+  "$relay_base/api/v1/control/agent/claim" >/dev/null
+
+curl -fsS -X POST \
+  -H "$relay_auth" -H 'Content-Type: application/json' \
   -d '{}' \
   "$relay_base/api/v1/recording/start" >/dev/null
 sleep 1
 curl -fsS -X POST \
   -H "$relay_auth" -H 'Content-Type: application/json' \
+  -d '{"agentId":"native-smoke","actions":[{"type":"move","x":1100,"y":700}]}' \
+  "$relay_base/api/v1/input" >/dev/null
+sleep 1
+relay_recording_result=$(curl -fsS -X POST \
+  -H "$relay_auth" -H 'Content-Type: application/json' \
   -d '{}' \
-  "$relay_base/api/v1/recording/stop" \
-  | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["status"]=="saved"; assert data["sizeBytes"]>0'
+  "$relay_base/api/v1/recording/stop")
+relay_recording_path=$(printf '%s' "$relay_recording_result" \
+  | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["status"]=="saved"; assert data["sizeBytes"]>0; print(data["path"])')
+ffprobe -v error \
+  -show_entries stream=width,height \
+  -of csv=p=0:s=x \
+  "$relay_recording_path" | rg -q '^1440x900$'
+relay_recording_directory=$(dirname "$relay_recording_path")
+relay_recording_stem=$(basename "$relay_recording_path" .mp4)
+relay_raw_path="$relay_recording_directory/.$relay_recording_stem.source.mp4"
+if [ -e "$relay_raw_path" ]; then
+  echo "raw framebuffer capture was published after showcase rendering" >&2
+  exit 1
+fi
 
 curl -fsS -X POST \
   -H "$relay_auth" -H 'Content-Type: application/json' \

@@ -23,17 +23,4 @@ xset s off -dpms
   done
 ) &
 
-(
-  sleep 2
-  chromium \
-    --force-renderer-accessibility \
-    --no-first-run \
-    --hide-crash-restore-bubble \
-    --disable-sync \
-    --disable-features=TranslateUI \
-    --window-size=1100,680 \
-    --window-position=170,95 \
-    about:blank >/tmp/chromium.log 2>&1
-) &
-
 exec /usr/bin/xfce4-session

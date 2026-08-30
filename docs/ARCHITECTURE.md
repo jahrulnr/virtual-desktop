@@ -19,6 +19,8 @@ browser -- HTTP/WebSocket --> nginx :8080
                                                        |
                                                 Xvfb :0 + XFCE
                                                        |
+                                   Playwright MCP :8931
+                                                        |
                                         Chromium, Files, Terminal,
                                         and runtime-installed apps
 
@@ -36,6 +38,14 @@ The MCP server listens only on `127.0.0.1` and uses stateless Streamable HTTP.
 Coddy may reconnect or reuse a persisted conversation after `compose down` / `up`
 without carrying an expired transport session ID. This directly avoids the stale
 `session not found` failure that motivated the single-container rebuild.
+
+The headed Playwright MCP server is a separate loopback service in the same
+container. It launches the system Chromium executable with the persistent
+desktop profile and debug capabilities, so browser DOM/console/network
+observations and the noVNC framebuffer refer to one visible browser. Its init
+page opens the local `index.html` start page, and startup profile preparation
+hides the empty bookmarks bar without deleting saved bookmarks. It is not an
+externally published debug port.
 
 For agents outside the container, the same process opens an optional second
 listener on `0.0.0.0:8091` behind a constant-time bearer-token check. It exposes
@@ -72,15 +82,36 @@ The Go MCP surface intentionally stays small:
   release-control;
 - `ui_inspect` returns a bounded AT-SPI accessibility snapshot.
 
-Grounding is hybrid. The operator should inspect AT-SPI first, use screenshots for
-canvas, images, or incomplete Electron accessibility, perform a small action, and
-observe again. Long pointer moves use a capped smoothstep path inside the Go
-service, so the model chooses an endpoint rather than generating animation frames.
+Showcase framing deliberately is not an MCP tool. The control runtime observes
+successful pointer actions and moves an activity-driven 200% presentation camera around the
+same coordinates, keeping camera decisions out of the model's tool-selection loop.
+
+Grounding is hybrid. The operator should inspect AT-SPI first, use Playwright
+snapshots for browser DOM/debug data, and use screenshots for canvas, images, or
+incomplete Electron accessibility. Long pointer moves use a capped, blocking
+quintic smootherstep path with a short wait between points inside the Go service,
+so the model chooses an endpoint rather than generating animation frames. Text
+is delivered as separate bounded deltas that prefer word boundaries, and the
+controller types each character with a 50 ms delay. Discrete MCP clicks and key
+chords add a short blocking settle pause; every X11 move waits for
+acknowledgement before the next point.
 
 Relay uses the real X cursor. x11vnc draws it into the streamed framebuffer, so AI
 moves, human moves, and screen recordings agree on one pointer. In observer mode,
 the web client adds a transparent shield above noVNC: the browser pointer remains
-visible, but input cannot enter the desktop until **Take control** succeeds.
+visible, but input cannot enter the desktop until the centered **Take control**
+action succeeds. The lease card, activity, tools, and Coddy task state are static
+sidebar content rather than floating overlays on the framebuffer. Connection and
+showcase camera state remain available to the service/API without redundant
+status badges in the user-facing shell. After each successful AI pointer action,
+the control API publishes a `showcase.camera` event and the web observer smoothly
+changes the transform origin to that framebuffer position with an interruptible
+240 ms ease-out. Retargeting starts from the currently rendered position. Screen
+recording samples the same curve on the 30 fps timeline and applies it during
+mandatory FFmpeg post-processing, so the saved MP4 contains the framing while AI
+coordinates remain unchanged. Human takeover switches to 1:1 without a
+transition before noVNC input is exposed; release eases back to the showcase
+view. Reduced-motion clients follow the same targets without animation.
 
 ## Control handoff
 
@@ -89,9 +120,10 @@ human leases last 30 seconds while active clients heartbeat. A human claim alway
 preempts the agent. The interrupted tool receives HTTP 409, any held input is
 released, and both sides keep viewing the same applications and framebuffer.
 
-In observer mode the chrome keeps **Take control** visible without covering the
-framebuffer. **Release** lives in the same chrome. `Alt+Shift+C` toggles the
-lease. Taking control also cancels an in-flight Coddy turn so the model does not
+In observer mode the stage keeps only the centered **Take control** action visible;
+the sidebar contains the lease card and the rest of the session chrome. **Release**
+lives in that sidebar and is shown only for the human lease. `Alt+Shift+C` toggles
+the lease. Taking control also cancels an in-flight Coddy turn so the model does not
 keep spending tokens against HTTP 409. Host and guest clipboards are synchronized
 while the human lease is live.
 
