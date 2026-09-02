@@ -43,9 +43,9 @@ class DesktopShowcaseDefaultsTests(unittest.TestCase):
         launch_args = config["browser"]["launchOptions"]["args"]
         viewport = config["browser"]["contextOptions"]["viewport"]
 
-        self.assertIn("--window-size=1200,760", launch_args)
-        self.assertIn("--window-position=120,60", launch_args)
-        self.assertEqual(viewport, {"width": 1200, "height": 760})
+        self.assertIn("--window-size=1100,680", launch_args)
+        self.assertIn("--window-position=170,60", launch_args)
+        self.assertEqual(viewport, {"width": 1100, "height": 680})
 
     def test_xvfb_uses_showcase_dpi(self):
         for config_path in XVFB_CONFIGS:

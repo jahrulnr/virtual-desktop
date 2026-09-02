@@ -72,6 +72,46 @@ class ChromiumProfileTests(unittest.TestCase):
             self.assertEqual(master_result["session"]["restore_on_startup"], 4)
             self.assertEqual(master_result["session"]["startup_urls"], [MODULE.DEFAULT_START_PAGE])
 
+    def test_oversized_window_placement_is_reset_for_showcase(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Preferences"
+            path.write_text(json.dumps({
+                "browser": {
+                    "window_placement": {
+                        "left": 120,
+                        "top": 29,
+                        "right": 1328,
+                        "bottom": 920,
+                        "maximized": False,
+                    },
+                },
+            }))
+
+            self.assertTrue(MODULE._set_showcase_window_placement(path))
+            result = json.loads(path.read_text())
+            self.assertEqual(
+                result["browser"]["window_placement"],
+                MODULE.SHOWCASE_WINDOW_PLACEMENT,
+            )
+
+    def test_safe_window_placement_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Preferences"
+            placement = {
+                "left": 170,
+                "top": 41,
+                "right": 1278,
+                "bottom": 852,
+                "maximized": False,
+            }
+            path.write_text(json.dumps({"browser": {"window_placement": placement}}))
+
+            self.assertFalse(MODULE._set_showcase_window_placement(path))
+            self.assertEqual(
+                json.loads(path.read_text())["browser"]["window_placement"],
+                placement,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

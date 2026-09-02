@@ -12,8 +12,8 @@
         "--hide-crash-restore-bubble",
         "--disable-sync",
         "--disable-features=TranslateUI",
-        "--window-size=1200,760",
-        "--window-position=120,60"
+        "--window-size=1100,680",
+        "--window-position=170,60"
       ]
     },
     "initPage": [
@@ -21,8 +21,8 @@
     ],
     "contextOptions": {
       "viewport": {
-        "width": 1200,
-        "height": 760
+        "width": 1100,
+        "height": 680
       }
     }
   }

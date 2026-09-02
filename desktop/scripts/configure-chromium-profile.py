@@ -14,6 +14,15 @@ from typing import Any, Callable
 
 
 DEFAULT_START_PAGE = "http://127.0.0.1:8080/start-page/index.html"
+SHOWCASE_WINDOW_PLACEMENT = {
+    "left": 170,
+    "top": 60,
+    "right": 1270,
+    "bottom": 820,
+    "maximized": False,
+}
+SHOWCASE_MAX_WIDTH = 1120
+SHOWCASE_MAX_HEIGHT = 820
 
 
 def _update_preferences(path: Path, update: Callable[[dict[str, Any]], bool]) -> bool:
@@ -89,12 +98,49 @@ def _set_default_start_page(path: Path) -> bool:
     return _update_preferences(path, update)
 
 
+def _set_showcase_window_placement(path: Path) -> bool:
+    def update(data: dict[str, Any]) -> bool:
+        browser = data.get("browser")
+        if not isinstance(browser, dict):
+            browser = {}
+            data["browser"] = browser
+
+        placement = browser.get("window_placement")
+        if not isinstance(placement, dict):
+            placement = {}
+
+        try:
+            width = int(placement["right"]) - int(placement["left"])
+            height = int(placement["bottom"]) - int(placement["top"])
+            is_safe = (
+                placement.get("maximized") is False
+                and int(placement["left"]) >= 0
+                and int(placement["top"]) >= 29
+                and width > 0
+                and width <= SHOWCASE_MAX_WIDTH
+                and height > 0
+                and height <= SHOWCASE_MAX_HEIGHT
+            )
+        except (KeyError, TypeError, ValueError):
+            is_safe = False
+
+        if is_safe:
+            return False
+
+        placement.update(SHOWCASE_WINDOW_PLACEMENT)
+        browser["window_placement"] = placement
+        return True
+
+    return _update_preferences(path, update)
+
+
 def configure_profile(profile_preferences: Path, master_preferences: Path) -> int:
     # The master file handles first launch; the profile file handles an existing
     # named volume. Bookmarks themselves are intentionally preserved.
     for path in (master_preferences, profile_preferences):
         _set_bookmark_bar_hidden(path)
         _set_default_start_page(path)
+        _set_showcase_window_placement(path)
     return 0
 
 
