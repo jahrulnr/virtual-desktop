@@ -19,6 +19,14 @@ if [ ! -e /home/desktop/.relay-xfce-v1 ]; then
   cp -a /opt/relay/home-template/.local /home/desktop/
   touch /home/desktop/.relay-xfce-v1
 fi
+# Keep the launcher panel behavior in sync for already-initialized named
+# volumes without resetting unrelated user-owned XFCE preferences.
+if [ ! -e /home/desktop/.relay-xfce-v2 ]; then
+  install -D -m 0644 \
+    /opt/relay/home-template/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml \
+    /home/desktop/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+  touch /home/desktop/.relay-xfce-v2
+fi
 install -d -m 0755 /home/desktop/.agents/skills
 cp -a /opt/relay/home-template/.agents/skills/os-operator \
   /home/desktop/.agents/skills/

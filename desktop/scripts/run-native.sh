@@ -192,7 +192,7 @@ cmd_start() {
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 
   if ! running_pid xvfb >/dev/null; then
-    start_bg xvfb Xvfb "$DISPLAY" -screen 0 "${WIDTH}x${HEIGHT}x24" -dpi 90 -nolisten tcp -ac +extension RANDR
+    start_bg xvfb Xvfb "$DISPLAY" -screen 0 "${WIDTH}x${HEIGHT}x24" -dpi 80 -nolisten tcp -ac +extension RANDR
   fi
   "$ROOT/desktop/scripts/wait-for-x.sh" true
 

@@ -74,9 +74,9 @@ rg -q 'chmod 2770 /home/desktop/Downloads/recordings' desktop/scripts/entrypoint
 rg -q 'chgrp relayaccess /home/desktop/Downloads' desktop/scripts/entrypoint.sh
 rg -q '0751' desktop/scripts/entrypoint.sh
 rg -q '^directory=/home/desktop/workspace$' desktop/config/supervisord.conf
-rg -q -- '-dpi 90' desktop/config/supervisord.conf desktop/scripts/run-native.sh
+rg -q -- '-dpi 80' desktop/config/supervisord.conf desktop/scripts/run-native.sh
 if rg -n -- '-dpi 96' desktop/config/supervisord.conf desktop/scripts/run-native.sh; then
-  echo "Xvfb logical DPI must use the compact 90 DPI profile" >&2
+  echo "Xvfb logical DPI must use the compact 80 DPI profile" >&2
   exit 1
 fi
 rg -q 'aria-controls="control-drawer"' web/index.html

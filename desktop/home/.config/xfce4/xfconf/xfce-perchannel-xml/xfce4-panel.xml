@@ -26,6 +26,7 @@
       <property name="size" type="uint" value="52"/>
       <property name="background-style" type="uint" value="1"/>
       <property name="background-alpha" type="uint" value="72"/>
+      <property name="autohide-behavior" type="uint" value="1"/>
       <property name="plugin-ids" type="array">
         <value type="int" value="10"/>
         <value type="int" value="11"/>
