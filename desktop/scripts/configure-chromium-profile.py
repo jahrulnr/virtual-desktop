@@ -110,12 +110,20 @@ def _set_showcase_window_placement(path: Path) -> bool:
             placement = {}
 
         try:
-            width = int(placement["right"]) - int(placement["left"])
-            height = int(placement["bottom"]) - int(placement["top"])
+            left = int(placement["left"])
+            top = int(placement["top"])
+            right = int(placement["right"])
+            bottom = int(placement["bottom"])
+            width = right - left
+            height = bottom - top
+            display_width = int(os.environ.get("WIDTH", "1440"))
+            display_height = int(os.environ.get("HEIGHT", "900"))
             is_safe = (
                 placement.get("maximized") is False
-                and int(placement["left"]) >= 0
-                and int(placement["top"]) >= 29
+                and left >= 0
+                and top >= 29
+                and right <= display_width
+                and bottom <= display_height
                 and width > 0
                 and width <= SHOWCASE_MAX_WIDTH
                 and height > 0
